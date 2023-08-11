@@ -1,0 +1,2 @@
+# letterboxd-ratings-scraper
+ 
