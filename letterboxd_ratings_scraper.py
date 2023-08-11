@@ -117,8 +117,6 @@ def get_following_list(username):
 
         for person in people:
             person_name = person["data-username"]
-            # person_link = person.find("a", class_="person-summary__name")["href"]
-            # print(f"Found person: {person_name} ({person_link})")
             following_list.append(person_name)
 
         page_number += 1
@@ -128,13 +126,13 @@ def get_following_list(username):
 # Function to export the database to a CSV file
 def export_db_to_csv(connection):
     with connection.cursor() as cursor:
-        sql = "SELECT * FROM film_database WHERE avg_rating > 8.0 ORDER BY popularity DESC"
+        sql = "SELECT letterboxd_url, watched_people, avg_rating, popularity FROM film_database WHERE avg_rating >= 8.0 AND watched_people >= 50 ORDER BY popularity DESC"
         cursor.execute(sql)
         film_data = cursor.fetchall()
 
         with open("film_database.csv", "w", newline="", encoding="utf-8") as csv_file:
             csv_writer = csv.writer(csv_file)
-            csv_writer.writerow(["Title", "Letterboxd URL", "Watched People", "Average Rating", "Popularity"])
+            csv_writer.writerow(["url", "Watched People", "Average Rating", "Popularity"])
             csv_writer.writerows(film_data)
 
 if __name__ == "__main__":
@@ -150,13 +148,13 @@ if __name__ == "__main__":
         database="postgres"
     )
 
-    following_list = get_following_list(username)
-    for person in following_list:
-        print(f"Scraping {person}'s films...")
-        parse_user_films(person, connection)
+    # following_list = get_following_list(username)
+    # for person in following_list:
+    #     print(f"Scraping {person}'s films...")
+    #     parse_user_films(person, connection)
 
     # parse_user_films(username, connection)
-    # export_db_to_csv(connection)
+    export_db_to_csv(connection)
     print("Done!")
 
     # Close the database connection
