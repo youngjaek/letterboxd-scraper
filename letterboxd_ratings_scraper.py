@@ -20,7 +20,7 @@ def parse_user_films(username, connection):
 
         soup = BeautifulSoup(response.text, "lxml")
         films = soup.find_all("li", class_="poster-container")
-        print(f"Found {len(films)} films on this page")
+        # print(f"Found {len(films)} films on this page")
 
         if not films:
             # No more films on this page, break the loop
@@ -72,7 +72,7 @@ def fetch_film_db(title, letterboxd_url, connection):
 def add_film_db(title, letterboxd_url, watched_people, avg_rating, popularity, connection):
     try:
         with connection.cursor() as cursor:
-            sql = "INSERT INTO film_database (title, letterboxd_url, watched_people, avg_rating, popularity) VALUES (%s, %s, %s, %s, %s)"
+            sql = "INSERT INTO film_database (title, letterboxd_url, watched_people, avg_rating, popularity, watched) VALUES (%s, %s, %s, %s, %s, FALSE)"
             cursor.execute(sql, (title, letterboxd_url, watched_people, avg_rating, popularity))
         connection.commit()
         # print(f"Added film '{title}' to the database.")
@@ -88,6 +88,59 @@ def update_film_db(title, letterboxd_url, watched_people, avg_rating, popularity
             cursor.execute(sql, (watched_people, avg_rating, popularity, title, letterboxd_url))
         connection.commit()
         # print(f"Updated film '{title}' in the database.")
+    except Exception as e:
+        print(f"Error: {e}")
+        connection.rollback()
+
+# Function to parse user's watched films page and skip if films are not in the database and if they exist, mark them as watched in the database
+def parse_user_watched_films(username, connection):
+    page_number = 1
+    # scraped_films_count = 0
+
+    # print(f"Scraping {username}'s watched films page...")
+    while True:
+        # print(f"Scraping page {page_number}...")
+        base_url = f"https://letterboxd.com/{username}/films/page/{page_number}/"
+        headers = {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/58.0.3029.110 Safari/537.3"
+        }
+
+        response = requests.get(base_url, headers=headers)
+
+        soup = BeautifulSoup(response.text, "lxml")
+        films = soup.find_all("li", class_="poster-container")
+        # print(f"Found {len(films)} films on this page")
+
+        if not films:
+            # No more films on this page, break the loop
+            break
+
+        for film in films:
+            film_name = film.find("img")["alt"]
+            film_link = film.find("div")["data-film-slug"]
+
+            letterboxd_url = f"https://letterboxd.com{film_link}"
+
+            # Check if the film is already in the database
+            film_data = fetch_film_db(film_name, letterboxd_url, connection)
+
+            if film_data:
+                # Film exists in the database, mark it as watched
+                mark_film_watched_db(film_name, letterboxd_url, connection)
+            else:
+                # Film does not exist in the database, skip it
+                pass
+
+        page_number += 1
+
+# Function to mark film as watched in the database
+def mark_film_watched_db(title, letterboxd_url, connection):
+    try:
+        with connection.cursor() as cursor:
+            sql = "UPDATE film_database SET watched = TRUE WHERE title = %s AND letterboxd_url = %s"
+            cursor.execute(sql, (title, letterboxd_url))
+        connection.commit()
+        # print(f"Marked film '{title}' as watched in the database.")
     except Exception as e:
         print(f"Error: {e}")
         connection.rollback()
@@ -126,7 +179,7 @@ def get_following_list(username):
 # Function to export the database to a CSV file
 def export_db_to_csv(connection):
     with connection.cursor() as cursor:
-        sql = "SELECT letterboxd_url, watched_people, avg_rating, popularity FROM film_database WHERE avg_rating >= 8.0 AND watched_people >= 50 ORDER BY popularity DESC"
+        sql = "SELECT letterboxd_url, watched_people, avg_rating, popularity FROM film_database WHERE (avg_rating >= 7.0 AND watched_people >= 40 AND watched = FALSE) OR (avg_rating >= 7.4 AND watched_people >= 25 AND watched = FALSE) OR (avg_rating >= 8.0 AND watched_people >= 10 AND watched = FALSE) ORDER BY popularity DESC"
         cursor.execute(sql)
         film_data = cursor.fetchall()
 
@@ -137,7 +190,7 @@ def export_db_to_csv(connection):
 
 if __name__ == "__main__":
     # Replace 'your_username' with the Letterboxd username you want to scrape
-    username = "filipe_furtado"
+    username = "thebigal"
 
     # Connect to the PostgreSQL database
     connection = psycopg2.connect(
@@ -153,8 +206,12 @@ if __name__ == "__main__":
     #     print(f"Scraping {person}'s films...")
     #     parse_user_films(person, connection)
 
+    print(f"Scraping {username}'s watched films...")
+    parse_user_watched_films(username, connection)
+
     # parse_user_films(username, connection)
-    export_db_to_csv(connection)
+    # print("Exporting database to CSV...")
+    # export_db_to_csv(connection)
     print("Done!")
 
     # Close the database connection
