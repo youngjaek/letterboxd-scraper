@@ -1,0 +1,23 @@
+[database]
+url = "postgresql://postgres:postgres@localhost:5432/letterboxd"
+echo = false
+pool_size = 5
+pool_timeout = 30
+
+[scraper]
+user_agent = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) LetterboxdScraper/0.1"
+max_concurrency = 4
+request_timeout_seconds = 15
+retry_limit = 3
+retry_backoff_seconds = 2
+throttle_seconds = 1.0
+
+[rss]
+poll_interval_minutes = 60
+max_entries = 50
+
+[cohort_defaults]
+include_seed = true
+follow_depth = 1
+min_votes = 25
+m_value = 50
