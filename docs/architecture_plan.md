@@ -1,7 +1,7 @@
 # Personalized Letterboxd Scraper — Architecture Plan
 
 ## Project Goals
-- Build reusable datasets for multiple “taste cohorts” (e.g., me + people I follow, Filipe + their followers).
+- Build reusable datasets for multiple “taste cohorts” (e.g., me + people I follow, a friend + their followers).
 - Keep data fresh without rerunning six-hour full scrapes each time.
 - Expose fast ranking queries and exports without hand-written SQL each run.
 

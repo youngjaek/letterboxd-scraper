@@ -13,6 +13,8 @@ src/letterboxd_scraper/http.py
 src/letterboxd_scraper/db/models.py
 src/letterboxd_scraper/db/session.py
 src/letterboxd_scraper/scrapers/follow_graph.py
+src/letterboxd_scraper/scrapers/listings.py
+src/letterboxd_scraper/scrapers/poster_utils.py
 src/letterboxd_scraper/scrapers/ratings.py
 src/letterboxd_scraper/scrapers/rss.py
 src/letterboxd_scraper/services/__init__.py
@@ -22,6 +24,8 @@ src/letterboxd_scraper/services/rankings.py
 src/letterboxd_scraper/services/ratings.py
 src/letterboxd_scraper/services/rss_updates.py
 src/letterboxd_scraper/services/stats.py
+src/letterboxd_scraper/services/telemetry.py
 tests/test_follow_graph.py
+tests/test_listings_scraper.py
 tests/test_ratings_scraper.py
 tests/test_rss_scraper.py

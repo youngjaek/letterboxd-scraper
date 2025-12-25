@@ -1,9 +1,9 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Dict, List, Sequence
+from typing import Dict, List, Optional, Sequence
 
-from sqlalchemy import delete, text
+from sqlalchemy import bindparam, delete, text
 from sqlalchemy.orm import Session
 
 from ..db import models
@@ -15,6 +15,17 @@ class RankingResult:
     score: float
     rank: int
     metadata: Dict[str, float]
+
+
+@dataclass
+class RankedFilm:
+    film_id: int
+    rank: Optional[int]
+    score: float
+    slug: str
+    title: str
+    watchers: Optional[int]
+    avg_rating: Optional[float]
 
 
 def compute_bayesian(session: Session, cohort_id: int, m_value: int) -> List[RankingResult]:
@@ -51,6 +62,58 @@ def compute_bayesian(session: Session, cohort_id: int, m_value: int) -> List[Ran
             )
         )
     return results
+
+
+def fetch_rankings_for_film_ids(
+    session: Session,
+    *,
+    cohort_id: int,
+    strategy: str,
+    film_ids: Sequence[int],
+) -> List[RankedFilm]:
+    if not film_ids:
+        return []
+    stmt = text(
+        """
+        SELECT
+            fr.film_id,
+            fr.rank,
+            fr.score,
+            f.slug,
+            f.title,
+            stats.watchers,
+            stats.avg_rating
+        FROM film_rankings fr
+        JOIN films f ON f.id = fr.film_id
+        LEFT JOIN cohort_film_stats stats
+            ON stats.cohort_id = fr.cohort_id AND stats.film_id = fr.film_id
+        WHERE fr.cohort_id = :cohort_id
+          AND fr.strategy = :strategy
+          AND fr.film_id IN :film_ids
+        ORDER BY fr.rank ASC
+        """
+    ).bindparams(bindparam("film_ids", expanding=True))
+    rows = session.execute(
+        stmt,
+        {"cohort_id": cohort_id, "strategy": strategy, "film_ids": tuple(film_ids)},
+    ).fetchall()
+    ranked: List[RankedFilm] = []
+    for row in rows:
+        score = float(row.score) if row.score is not None else 0.0
+        avg_rating = float(row.avg_rating) if row.avg_rating is not None else None
+        watchers = int(row.watchers) if row.watchers is not None else None
+        ranked.append(
+            RankedFilm(
+                film_id=row.film_id,
+                rank=row.rank,
+                score=score,
+                slug=row.slug,
+                title=row.title,
+                watchers=watchers,
+                avg_rating=avg_rating,
+            )
+        )
+    return ranked
 
 
 def persist_rankings(

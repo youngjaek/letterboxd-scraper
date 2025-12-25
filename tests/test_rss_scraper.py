@@ -47,7 +47,7 @@ def test_rss_scraper_parses_real_fixture(monkeypatch, tmp_path):
         return real_feed
 
     monkeypatch.setattr("letterboxd_scraper.scrapers.rss.feedparser.parse", mock_parse)
-    entries = list(scraper.fetch_feed("filipe_furtado"))
+    entries = list(scraper.fetch_feed("sample_user"))
     assert len(entries) == settings.rss.max_entries
     assert entries[0].film_slug == "the-passion-according-to-gh"
     assert entries[0].rating == 2.0

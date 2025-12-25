@@ -1,7 +1,7 @@
 # letterboxd-ratings-scraper
 
 Personalized Letterboxd cohort scraper that builds per-friend-group rankings by:
-- Crawling follow graphs to define “cohorts” (you + people you follow, Filipe + their follows, etc.).
+- Crawling follow graphs to define “cohorts” (you + people you follow, a friend + their follows, etc.).
 - Scraping each member’s rated films, storing normalized ratings, and refreshing stats.
 - Computing ranking strategies (currently Bayesian weighted average) and exporting CSV lists.
 - Applying incremental updates via each member’s Letterboxd RSS feed so data stays fresh.
@@ -21,6 +21,30 @@ docs/
 db/schema.sql              # Normalized schema + materialized view
 tests/                     # Mock-based scraper tests
 ```
+
+## CLI Usage
+
+The Typer CLI surfaces each workflow step. Commands are grouped by workflow so you can find the exact invocation you need.
+
+### Cohort commands
+
+- `letterboxd-scraper cohort build --seed <username> --label "<label>" [--depth N] [--include-seed/--no-include-seed]` — create a cohort definition and seed membership.
+- `letterboxd-scraper cohort list` — print existing cohorts with IDs, labels, seeds, and member counts.
+- `letterboxd-scraper cohort refresh <cohort_id>` — re-crawl the follow graph to sync members with the configured depth.
+
+### Scraping + stats commands
+
+- `letterboxd-scraper scrape full <cohort_id> [--resume]` — run a historical scrape for every cohort member.
+- `letterboxd-scraper scrape incremental <cohort_id>` — apply RSS-driven updates across the cohort.
+- `letterboxd-scraper stats refresh [--concurrent/--no-concurrent]` — rebuild the `cohort_film_stats` materialized view.
+
+### Ranking + export commands
+
+- `letterboxd-scraper rank compute <cohort_id> [--strategy bayesian]` — compute `film_rankings` entries.
+- `letterboxd-scraper rank subset <cohort_id> (--list-path user/list/some-list/ | --filmography-path actor/sample-performer/ | --html-file path) [--limit N]` — filter an existing ranking set against a Letterboxd list, filmography page, or saved HTML.
+- `letterboxd-scraper export csv <cohort_id> [--strategy bayesian] [--min-score N] --output exported/my_friends.csv` — write ranking results to CSV.
+
+Each command respects configuration passed via `.env`, environment variables, or TOML config files (see below).
 
 ## Getting Started
 
@@ -49,6 +73,7 @@ tests/                     # Mock-based scraper tests
    letterboxd-scraper scrape incremental 1
    letterboxd-scraper stats refresh
    letterboxd-scraper rank compute 1 --strategy bayesian
+   letterboxd-scraper rank subset 1 --strategy bayesian --list-path user/list/example-list/
    ```
 
 4. **Run tests**

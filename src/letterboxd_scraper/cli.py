@@ -18,6 +18,7 @@ from .services import rss_updates as rss_service
 from .services import stats as stats_service
 from .services import telemetry as telemetry_service
 from .scrapers.follow_graph import FollowGraphScraper, expand_follow_graph
+from .scrapers.listings import PosterListingScraper
 from .scrapers.ratings import ProfileRatingsScraper
 from .scrapers.rss import RSSScraper
 
@@ -247,6 +248,116 @@ def rank_compute(
             else:
                 console.print(f"[yellow]TODO[/yellow]: strategy '{strategy}' not implemented yet.")
 
+
+@rank_app.command("subset")
+def rank_subset(
+    ctx: typer.Context,
+    cohort_id: int = typer.Argument(..., help="Cohort identifier."),
+    strategy: str = typer.Option("bayesian", "--strategy", "-s", help="Ranking strategy id."),
+    list_path: Optional[str] = typer.Option(
+        None,
+        "--list-path",
+        help="Path or URL to a Letterboxd list (supports pagination).",
+    ),
+    filmography_path: Optional[str] = typer.Option(
+        None,
+        "--filmography-path",
+        help="Path or URL to a Letterboxd filmography page.",
+    ),
+    html_file: Optional[Path] = typer.Option(
+        None,
+        "--html-file",
+        help="Local HTML file containing a list or filmography (single page).",
+    ),
+    limit: int = typer.Option(20, "--limit", "-n", help="Number of results to display."),
+) -> None:
+    """
+    Filter previously computed rankings down to films contained in a list/filmography.
+    """
+    settings = get_state(ctx)["settings"]
+    sources = [bool(list_path), bool(filmography_path), bool(html_file)]
+    if sum(1 for enabled in sources if enabled) != 1:
+        typer.echo("Provide exactly one of --list-path, --filmography-path, or --html-file.")
+        raise typer.Exit(code=1)
+    entries = []
+    scraper: Optional[PosterListingScraper] = None
+    try:
+        if html_file:
+            html = html_file.read_text(encoding="utf-8")
+            entries = PosterListingScraper.parse_html(html)
+        else:
+            scraper = PosterListingScraper(settings)
+            if list_path:
+                entries = list(scraper.iter_list_entries(list_path))
+            else:
+                entries = list(scraper.iter_single_page(filmography_path or ""))
+    finally:
+        if scraper:
+            scraper.close()
+    if not entries:
+        typer.echo("No films found in the provided source.")
+        raise typer.Exit(code=1)
+    slugs = [entry.slug for entry in entries if entry.slug]
+    if not slugs:
+        typer.echo("No film slugs detected in the source HTML.")
+        raise typer.Exit(code=1)
+    with get_session(settings) as session:
+        film_rows = (
+            session.query(models.Film.id, models.Film.slug)
+            .filter(models.Film.slug.in_(slugs))
+            .all()
+        )
+        film_by_slug = {row.slug: row for row in film_rows}
+        missing_slugs = [slug for slug in slugs if slug not in film_by_slug]
+        ordered_ids: list[int] = []
+        seen_ids: set[int] = set()
+        for slug in slugs:
+            film = film_by_slug.get(slug)
+            if not film:
+                continue
+            film_id = int(film.id)
+            if film_id in seen_ids:
+                continue
+            seen_ids.add(film_id)
+            ordered_ids.append(film_id)
+        ranking_rows = ranking_service.fetch_rankings_for_film_ids(
+            session,
+            cohort_id=cohort_id,
+            strategy=strategy,
+            film_ids=ordered_ids,
+        )
+    if not ranking_rows:
+        console.print("[yellow]No ranking data[/yellow] matched the provided films. Run 'rank compute' first?")
+        return
+    display_rows = ranking_rows if limit <= 0 else ranking_rows[:limit]
+    limit_text = "all" if limit <= 0 else str(limit)
+    console.print(
+        f"[green]Matched[/green] {len(ranking_rows)} ranked films "
+        f"from {len(slugs)} source entries (limit {limit_text})."
+    )
+    for row in display_rows:
+        rank_display = row.rank if row.rank is not None else "-"
+        watchers = row.watchers if row.watchers is not None else "-"
+        avg_text = f"{row.avg_rating:.2f}" if row.avg_rating is not None else "-"
+        console.print(
+            f"#{rank_display} {row.title} ({row.slug}) "
+            f"score={row.score:.3f} watchers={watchers} avg={avg_text}"
+        )
+    if missing_slugs:
+        preview = ", ".join(sorted(set(missing_slugs))[:5])
+        console.print(f"[yellow]Missing in DB[/yellow]: {preview}")
+    ranked_ids = {row.film_id for row in ranking_rows}
+    missing_ranked = []
+    for slug in slugs:
+        film = film_by_slug.get(slug)
+        if not film:
+            continue
+        film_id = int(film.id)
+        if film_id not in ranked_ids:
+            missing_ranked.append(slug)
+    if missing_ranked:
+        preview = ", ".join(sorted(set(missing_ranked))[:5])
+        console.print(f"[yellow]No ranking rows[/yellow] for: {preview}")
 
 @export_app.command("csv")
 def export_csv(
