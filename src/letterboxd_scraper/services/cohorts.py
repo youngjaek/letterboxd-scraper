@@ -62,6 +62,24 @@ def get_cohort(session: Session, cohort_id: int) -> Optional[models.Cohort]:
     return session.get(models.Cohort, cohort_id)
 
 
+def rename_cohort(session: Session, cohort_id: int, new_label: str) -> Optional[models.Cohort]:
+    cohort = session.get(models.Cohort, cohort_id)
+    if not cohort:
+        return None
+    cohort.label = new_label
+    cohort.updated_at = datetime.utcnow()
+    return cohort
+
+
+def delete_cohort(session: Session, cohort_id: int) -> bool:
+    cohort = session.get(models.Cohort, cohort_id)
+    if not cohort:
+        return False
+    session.query(models.ScrapeRun).filter(models.ScrapeRun.cohort_id == cohort_id).delete()
+    session.delete(cohort)
+    return True
+
+
 def list_member_usernames(session: Session, cohort_id: int) -> list[str]:
     stmt = (
         select(models.User.letterboxd_username)

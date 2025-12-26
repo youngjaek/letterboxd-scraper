@@ -31,6 +31,8 @@ The Typer CLI surfaces each workflow step. Commands are grouped by workflow so y
 - `letterboxd-scraper cohort build --seed <username> --label "<label>" [--depth N] [--include-seed/--no-include-seed]` — create a cohort definition and seed membership.
 - `letterboxd-scraper cohort list` — print existing cohorts with IDs, labels, seeds, and member counts.
 - `letterboxd-scraper cohort refresh <cohort_id>` — re-crawl the follow graph to sync members with the configured depth.
+- `letterboxd-scraper cohort rename <cohort_id> --label "<new label>"` — update a cohort's display label.
+- `letterboxd-scraper cohort delete <cohort_id> [--yes]` — remove a cohort and its associated members/rankings (prompts for confirmation).
 
 ### Scraping + stats commands
 

@@ -123,6 +123,57 @@ def cohort_refresh(
             scraper.close()
 
 
+@cohort_app.command("rename")
+def cohort_rename(
+    ctx: typer.Context,
+    cohort_id: int = typer.Argument(..., help="Cohort identifier."),
+    label: str = typer.Option(..., "--label", "-l", help="New label for the cohort."),
+) -> None:
+    """Update the display label for an existing cohort."""
+    settings = get_state(ctx)["settings"]
+    with get_session(settings) as session:
+        cohort = cohort_service.rename_cohort(session, cohort_id, label)
+        if not cohort:
+            typer.echo(f"Cohort {cohort_id} not found.")
+            raise typer.Exit(code=1)
+    console.print(f"[green]Renamed[/green] cohort {cohort_id} to '{label}'.")
+
+
+@cohort_app.command("delete")
+def cohort_delete(
+    ctx: typer.Context,
+    cohort_id: int = typer.Argument(..., help="Cohort identifier."),
+    yes: bool = typer.Option(
+        False,
+        "--yes",
+        "-y",
+        help="Skip confirmation prompt and delete immediately.",
+    ),
+) -> None:
+    """Permanently delete a cohort and its associated data."""
+    settings = get_state(ctx)["settings"]
+    with get_session(settings) as session:
+        cohort = cohort_service.get_cohort(session, cohort_id)
+        if not cohort:
+            typer.echo(f"Cohort {cohort_id} not found.")
+            raise typer.Exit(code=1)
+        label = cohort.label
+    if not yes:
+        confirm = typer.confirm(
+            f"Delete cohort {cohort_id} ('{label}') and all associated rankings, members, and runs?",
+            default=False,
+        )
+        if not confirm:
+            typer.echo("Deletion cancelled.")
+            raise typer.Exit()
+    with get_session(settings) as session:
+        deleted = cohort_service.delete_cohort(session, cohort_id)
+    if not deleted:
+        typer.echo(f"Cohort {cohort_id} not found.")
+        raise typer.Exit(code=1)
+    console.print(f"[green]Deleted[/green] cohort {cohort_id} ('{label}').")
+
+
 @scrape_app.command("full")
 def scrape_full(
     ctx: typer.Context,
