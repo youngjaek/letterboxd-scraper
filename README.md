@@ -17,6 +17,7 @@ src/letterboxd_scraper/
     services/              # Cohort, rating, ranking, export, RSS update logic
 docs/
     architecture_plan.md   # Detailed system design
+    ranking_architecture.md # Ranking + smart bucket data flow
     workflow.md            # CLI workflow cheat sheet
 db/schema.sql              # Normalized schema + materialized view
 tests/                     # Mock-based scraper tests
@@ -44,9 +45,18 @@ The Typer CLI surfaces each workflow step. Commands are grouped by workflow so y
 
 - `letterboxd-scraper rank compute <cohort_id> [--strategy bayesian]` — compute `film_rankings` entries.
 - `letterboxd-scraper rank subset <cohort_id> (--list-path user/list/some-list/ | --filmography-path actor/sample-performer/ | --html-file path) [--limit N]` — filter an existing ranking set against a Letterboxd list, filmography page, or saved HTML.
+- `letterboxd-scraper rank buckets <cohort_id> [--strategy bayesian] [--release-start YEAR] [--recent-years N] [--persist] [--load timeframe-key]` — compute percentile buckets + engagement clusters, optionally constrained by release year or when the cohort logged the films, and persist the derived “smart list” definitions.
 - `letterboxd-scraper export csv <cohort_id> [--strategy bayesian] [--min-score N] --output exported/my_friends.csv` — write ranking results to CSV.
 
 Each command respects configuration passed via `.env`, environment variables, or TOML config files (see below).
+
+#### Smart ranking buckets
+
+`rank buckets` analyzes the existing `cohort_film_stats` view to automatically surface interesting clusters without hand-tuning thresholds:
+- Percentile buckets adapt to the cohort distribution (e.g., “Elite acclaim,” “Cult favorite,” “Crowd pleaser”).
+- Cluster labels rely on z-scores for watchers vs. average rating to highlight “High rating / low watchers,” “High engagement / mixed sentiment,” etc.
+- Temporal filters (release window, specific watch year, `--recent-years` rolling window, or explicit `--watched-since/--watched-until`) let you focus on “this year,” “last 5 years,” or any bespoke slice.
+- Use `--persist` to cache the current computation, then `--load <timeframe-key>` to rehydrate those smart lists in exports or dashboards without recomputing.
 
 ## Getting Started
 

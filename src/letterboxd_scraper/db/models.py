@@ -138,3 +138,26 @@ class FilmRanking(Base):
     rank: Mapped[Optional[int]] = mapped_column(Integer)
     params: Mapped[Optional[Dict[str, Any]]] = mapped_column(JSON)
     computed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow)
+
+
+class RankingInsight(Base):
+    __tablename__ = "ranking_insights"
+
+    cohort_id: Mapped[int] = mapped_column(
+        ForeignKey("cohorts.id", ondelete="CASCADE"), primary_key=True
+    )
+    strategy: Mapped[str] = mapped_column(String, primary_key=True)
+    film_id: Mapped[int] = mapped_column(
+        ForeignKey("films.id", ondelete="CASCADE"), primary_key=True
+    )
+    timeframe_key: Mapped[str] = mapped_column(String, primary_key=True)
+    filters: Mapped[Optional[Dict[str, Any]]] = mapped_column(JSON)
+    watchers: Mapped[Optional[int]] = mapped_column(Integer)
+    avg_rating: Mapped[Optional[float]] = mapped_column(Numeric)
+    watchers_percentile: Mapped[Optional[float]] = mapped_column(Numeric)
+    rating_percentile: Mapped[Optional[float]] = mapped_column(Numeric)
+    watchers_zscore: Mapped[Optional[float]] = mapped_column(Numeric)
+    rating_zscore: Mapped[Optional[float]] = mapped_column(Numeric)
+    cluster_label: Mapped[Optional[str]] = mapped_column(String)
+    bucket_label: Mapped[Optional[str]] = mapped_column(String)
+    computed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow)

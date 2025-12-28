@@ -76,6 +76,24 @@ CREATE TABLE IF NOT EXISTS film_rankings (
     PRIMARY KEY (cohort_id, strategy, film_id)
 );
 
+CREATE TABLE IF NOT EXISTS ranking_insights (
+    cohort_id INT REFERENCES cohorts(id) ON DELETE CASCADE,
+    strategy TEXT NOT NULL,
+    film_id INT REFERENCES films(id) ON DELETE CASCADE,
+    timeframe_key TEXT NOT NULL,
+    filters JSONB,
+    watchers INT,
+    avg_rating NUMERIC,
+    watchers_percentile NUMERIC,
+    rating_percentile NUMERIC,
+    watchers_zscore NUMERIC,
+    rating_zscore NUMERIC,
+    cluster_label TEXT,
+    bucket_label TEXT,
+    computed_at TIMESTAMPTZ DEFAULT NOW(),
+    PRIMARY KEY (cohort_id, strategy, film_id, timeframe_key)
+);
+
 -- Materialized view for cohort stats
 CREATE MATERIALIZED VIEW IF NOT EXISTS cohort_film_stats AS
 SELECT

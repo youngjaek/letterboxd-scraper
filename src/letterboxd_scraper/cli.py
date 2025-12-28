@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from collections import Counter
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Dict, Optional
 
@@ -12,6 +14,7 @@ from .db import models
 from .db.session import get_session, init_engine
 from .services import cohorts as cohort_service
 from .services import export as export_service
+from .services import insights as insight_service
 from .services import ratings as rating_service
 from .services import rankings as ranking_service
 from .services import rss_updates as rss_service
@@ -299,6 +302,158 @@ def rank_compute(
             else:
                 console.print(f"[yellow]TODO[/yellow]: strategy '{strategy}' not implemented yet.")
 
+
+@rank_app.command("buckets")
+def rank_buckets(
+    ctx: typer.Context,
+    cohort_id: int = typer.Argument(..., help="Cohort identifier."),
+    strategy: str = typer.Option("bayesian", "--strategy", "-s", help="Ranking strategy id."),
+    release_start: Optional[int] = typer.Option(None, "--release-start", help="Minimum release year."),
+    release_end: Optional[int] = typer.Option(None, "--release-end", help="Maximum release year."),
+    watched_year: Optional[int] = typer.Option(
+        None,
+        "--watched-year",
+        help="Only include films last logged in the provided year.",
+    ),
+    watched_since: Optional[datetime] = typer.Option(
+        None, "--watched-since", help="Only include films last logged on/after this timestamp."
+    ),
+    watched_until: Optional[datetime] = typer.Option(
+        None, "--watched-until", help="Only include films last logged on/before this timestamp."
+    ),
+    recent_years: Optional[int] = typer.Option(
+        None,
+        "--recent-years",
+        help="Shortcut to filter to films watched within the last N years.",
+    ),
+    load_timeframe: Optional[str] = typer.Option(
+        None,
+        "--load",
+        help="Load previously stored buckets for a timeframe key instead of recomputing.",
+    ),
+    persist: bool = typer.Option(
+        False,
+        "--persist/--no-persist",
+        help="Persist computed buckets for later reuse.",
+    ),
+    limit: int = typer.Option(
+        5,
+        "--limit",
+        "-n",
+        help="Number of entries to display per bucket (<=0 shows all).",
+    ),
+) -> None:
+    """
+    Surface percentile-based buckets and engagement/sentiment cluster labels.
+    """
+    settings = get_state(ctx)["settings"]
+    filter_opts = [release_start, release_end, watched_year, watched_since, watched_until, recent_years]
+    if load_timeframe and any(value is not None for value in filter_opts):
+        typer.echo("--load cannot be combined with filter options.")
+        raise typer.Exit(code=1)
+    if load_timeframe and persist:
+        typer.echo("--persist is not applicable when loading saved buckets.")
+        raise typer.Exit(code=1)
+    if watched_year and (watched_since or watched_until or recent_years):
+        typer.echo("Use either --watched-year or the watched date range options, not both.")
+        raise typer.Exit(code=1)
+    if recent_years is not None and recent_years <= 0:
+        typer.echo("--recent-years must be greater than zero.")
+        raise typer.Exit(code=1)
+    filters: insight_service.BucketFilters
+    computation: Optional[insight_service.InsightComputation] = None
+    with get_session(settings) as session:
+        if load_timeframe:
+            computation = insight_service.load_saved_buckets(
+                session, cohort_id=cohort_id, strategy=strategy, timeframe_key=load_timeframe
+            )
+            if not computation:
+                console.print(
+                    f"[yellow]No saved buckets[/yellow] found for timeframe '{load_timeframe}'."
+                )
+                return
+        else:
+            resolved_since = watched_since
+            if recent_years:
+                now = datetime.now(tz=timezone.utc)
+                resolved_since = resolved_since or now - timedelta(days=365 * recent_years)
+            resolved_since = _ensure_timezone(resolved_since)
+            resolved_until = _ensure_timezone(watched_until)
+            if resolved_since and resolved_until and resolved_since > resolved_until:
+                typer.echo("--watched-since must be before --watched-until.")
+                raise typer.Exit(code=1)
+            if release_start and release_end and release_start > release_end:
+                typer.echo("--release-start must be <= --release-end.")
+                raise typer.Exit(code=1)
+            filters = insight_service.BucketFilters(
+                release_start=release_start,
+                release_end=release_end,
+                watched_year=watched_year,
+                watched_since=resolved_since,
+                watched_until=resolved_until,
+            )
+            computation = insight_service.compute_ranking_buckets(
+                session, cohort_id=cohort_id, strategy=strategy, filters=filters
+            )
+            if persist and computation.insights:
+                insight_service.persist_insights(session, computation)
+                console.print(
+                    f"[green]Persisted[/green] {len(computation.insights)} rows "
+                    f"under timeframe '{computation.timeframe_key}'."
+                )
+    if not computation:
+        console.print("[yellow]No results[/yellow] to display.")
+        return
+    insights = computation.insights
+    if not insights:
+        console.print("[yellow]No films[/yellow] satisfied the provided filters.")
+        return
+    buckets: Dict[str, list[insight_service.FilmInsight]] = {}
+    for insight in insights:
+        buckets.setdefault(insight.bucket_label, []).append(insight)
+    total_buckets = len(buckets)
+    console.print(
+        f"[green]{'Loaded' if computation.source == 'stored' else 'Computed'}[/green] "
+        f"{len(insights)} films across {total_buckets} buckets "
+        f"(timeframe '{computation.timeframe_key}')."
+    )
+    summary = Table(title="Bucket Overview")
+    summary.add_column("Bucket", style="cyan")
+    summary.add_column("Films", justify="right")
+    summary.add_column("Top Cluster")
+    sorted_buckets = sorted(
+        buckets.items(),
+        key=lambda entry: (-len(entry[1]), entry[0]),
+    )
+    for bucket_label, bucket_rows in sorted_buckets:
+        cluster_counts = Counter(row.cluster_label for row in bucket_rows)
+        top_cluster = cluster_counts.most_common(1)[0][0] if cluster_counts else "-"
+        summary.add_row(bucket_label, str(len(bucket_rows)), top_cluster)
+    console.print(summary)
+    per_bucket_limit = None if limit <= 0 else limit
+    for bucket_label, bucket_rows in sorted_buckets:
+        console.print(f"[bold]{bucket_label}[/bold] ({len(bucket_rows)} films)")
+        ordered = sorted(
+            bucket_rows,
+            key=lambda item: (-item.rating_percentile, -item.watchers_percentile),
+        )
+        preview = ordered if per_bucket_limit is None else ordered[:per_bucket_limit]
+        for insight in preview:
+            console.print(
+                f"- {insight.title} ({insight.slug}) avg={insight.avg_rating:.2f} "
+                f"watchers={insight.watchers} "
+                f"rating_pct={insight.rating_percentile:.1f} "
+                f"watchers_pct={insight.watchers_percentile:.1f} "
+                f"cluster={insight.cluster_label}"
+            )
+
+
+def _ensure_timezone(value: Optional[datetime]) -> Optional[datetime]:
+    if value is None:
+        return None
+    if value.tzinfo is None:
+        return value.replace(tzinfo=timezone.utc)
+    return value
 
 @rank_app.command("subset")
 def rank_subset(
