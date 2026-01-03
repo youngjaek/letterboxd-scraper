@@ -468,7 +468,9 @@ def rank_subset(
     filmography_path: Optional[str] = typer.Option(
         None,
         "--filmography-path",
-        help="Path or URL to a Letterboxd filmography page.",
+        "--filmo-path",
+        "-F",
+        help="Path or URL to a Letterboxd filmography page (single page).",
     ),
     html_file: Optional[Path] = typer.Option(
         None,
@@ -483,7 +485,9 @@ def rank_subset(
     settings = get_state(ctx)["settings"]
     sources = [bool(list_path), bool(filmography_path), bool(html_file)]
     if sum(1 for enabled in sources if enabled) != 1:
-        typer.echo("Provide exactly one of --list-path, --filmography-path, or --html-file.")
+        typer.echo(
+            "Provide exactly one of --list-path, --filmography-path/--filmo-path, or --html-file."
+        )
         raise typer.Exit(code=1)
     entries = []
     scraper: Optional[PosterListingScraper] = None

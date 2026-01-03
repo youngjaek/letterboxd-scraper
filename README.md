@@ -44,7 +44,7 @@ The Typer CLI surfaces each workflow step. Commands are grouped by workflow so y
 ### Ranking + export commands
 
 - `letterboxd-scraper rank compute <cohort_id> [--strategy bayesian]` — compute `film_rankings` entries.
-- `letterboxd-scraper rank subset <cohort_id> (--list-path user/list/some-list/ | --filmography-path actor/sample-performer/ | --html-file path) [--limit N]` — filter an existing ranking set against a Letterboxd list, filmography page, or saved HTML.
+- `letterboxd-scraper rank subset <cohort_id> (--list-path user/list/some-list/ | --filmography-path/--filmo-path actor/sample-performer/ | --html-file path) [--limit N]` — filter an existing ranking set against a Letterboxd list, filmography page, or saved HTML.
 - `letterboxd-scraper rank buckets <cohort_id> [--strategy bayesian] [--release-start YEAR] [--recent-years N] [--persist] [--load timeframe-key]` — compute percentile buckets + engagement clusters, optionally constrained by release year or when the cohort logged the films, and persist the derived “smart list” definitions.
 - `letterboxd-scraper export csv <cohort_id> [--strategy bayesian] [--min-score N] --output exported/my_friends.csv` — write ranking results to CSV.
 
