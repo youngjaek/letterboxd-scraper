@@ -8,6 +8,7 @@ from letterboxd_scraper.config import (
     ScraperSettings,
     RSSSettings,
     CohortDefaults,
+    TMDBSettings,
 )
 
 
@@ -21,6 +22,7 @@ def make_settings() -> Settings:
         database=DatabaseSettings(url="sqlite:///:memory:"),
         scraper=ScraperSettings(user_agent="test"),
         rss=RSSSettings(),
+        tmdb=TMDBSettings(api_key="test-key"),
         cohort_defaults=CohortDefaults(),
         raw={},
     )

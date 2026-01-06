@@ -7,6 +7,7 @@ from letterboxd_scraper.config import (
     RSSSettings,
     ScraperSettings,
     Settings,
+    TMDBSettings,
 )
 from letterboxd_scraper.scrapers.listings import PosterListingScraper
 
@@ -21,6 +22,7 @@ def make_settings() -> Settings:
         database=DatabaseSettings(url="sqlite:///:memory:"),
         scraper=ScraperSettings(user_agent="test-agent"),
         rss=RSSSettings(),
+        tmdb=TMDBSettings(api_key="test-key"),
         cohort_defaults=CohortDefaults(),
         raw={},
     )
@@ -46,14 +48,14 @@ def test_iter_list_entries_handles_multiple_pages():
     html_page_one = """
     <div class="poster-grid">
         <ul class="grid">
-            <li data-film-slug="film-one" data-film-name="Film One"></li>
+            <li data-film-slug="film-one" data-film-name="Film One" data-film-id="301"></li>
         </ul>
     </div>
     """
     html_page_two = """
     <div class="poster-grid">
         <ul class="grid">
-            <li data-film-slug="film-two" data-film-name="Film Two"></li>
+            <li data-film-slug="film-two" data-film-name="Film Two" data-film-id="302"></li>
         </ul>
     </div>
     """
@@ -65,6 +67,8 @@ def test_iter_list_entries_handles_multiple_pages():
         Mock(status_code=200, text="<div></div>"),
     ]
     with patch.object(scraper.client, "get", side_effect=responses):
-        slugs = [entry.slug for entry in scraper.iter_list_entries("user/list/sample")]
+        entries = list(scraper.iter_list_entries("user/list/sample"))
     scraper.close()
-    assert slugs == ["film-one", "film-two"]
+    assert [entry.slug for entry in entries] == ["film-one", "film-two"]
+    assert entries[0].letterboxd_film_id == 301
+    assert entries[1].letterboxd_film_id == 302
