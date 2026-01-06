@@ -14,17 +14,31 @@ CREATE TABLE IF NOT EXISTS films (
     id SERIAL PRIMARY KEY,
     slug TEXT UNIQUE NOT NULL,
     title TEXT NOT NULL,
+    letterboxd_film_id INT UNIQUE,
+    letterboxd_rating_count INT,
+    letterboxd_fan_count INT,
+    letterboxd_weighted_average NUMERIC(4, 2),
     release_year INT,
+    release_date DATE,
+    tmdb_id INT UNIQUE,
+    imdb_id TEXT,
+    runtime_minutes INT,
     poster_url TEXT,
+    overview TEXT,
+    origin_countries JSONB,
+    genres JSONB,
+    tmdb_payload JSONB,
     created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
 CREATE TABLE IF NOT EXISTS ratings (
     user_id INT REFERENCES users(id) ON DELETE CASCADE,
     film_id INT REFERENCES films(id) ON DELETE CASCADE,
-    rating NUMERIC(3, 1) NOT NULL,
+    rating NUMERIC(3, 1),
     rated_at TIMESTAMPTZ,
     updated_at TIMESTAMPTZ DEFAULT NOW(),
+    liked BOOLEAN DEFAULT FALSE,
+    favorite BOOLEAN DEFAULT FALSE,
     diary_entry_url TEXT,
     PRIMARY KEY (user_id, film_id)
 );
@@ -94,6 +108,26 @@ CREATE TABLE IF NOT EXISTS ranking_insights (
     PRIMARY KEY (cohort_id, strategy, film_id, timeframe_key)
 );
 
+CREATE TABLE IF NOT EXISTS film_people (
+    id SERIAL PRIMARY KEY,
+    film_id INT REFERENCES films(id) ON DELETE CASCADE,
+    person_id INT,
+    name TEXT NOT NULL,
+    role TEXT NOT NULL,
+    credit_order INT,
+    UNIQUE (film_id, role, person_id)
+);
+
+CREATE TABLE IF NOT EXISTS film_histograms (
+    id SERIAL PRIMARY KEY,
+    film_id INT REFERENCES films(id) ON DELETE CASCADE,
+    cohort_id INT REFERENCES cohorts(id) ON DELETE CASCADE,
+    bucket_label TEXT NOT NULL,
+    count INT NOT NULL,
+    computed_at TIMESTAMPTZ DEFAULT NOW(),
+    UNIQUE (film_id, cohort_id, bucket_label)
+);
+
 -- Materialized view for cohort stats
 CREATE MATERIALIZED VIEW IF NOT EXISTS cohort_film_stats AS
 SELECT
@@ -106,6 +140,7 @@ SELECT
     MAX(r.updated_at) AS last_rating_at
 FROM ratings r
 JOIN cohort_members cm ON cm.user_id = r.user_id
+WHERE r.rating IS NOT NULL
 GROUP BY cm.cohort_id, r.film_id;
 
 CREATE INDEX IF NOT EXISTS idx_ratings_updated_at ON ratings(updated_at);

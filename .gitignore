@@ -8,3 +8,7 @@ __pycache__/
 .coverage
 *.egg-info/
 .venv/
+
+tests/fixtures/_ignored/
+
+docs/roadmap
