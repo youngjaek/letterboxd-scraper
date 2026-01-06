@@ -1,2 +1,0 @@
-[console_scripts]
-letterboxd-scraper = letterboxd_scraper.cli:app
