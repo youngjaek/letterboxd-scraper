@@ -20,6 +20,7 @@ class FilmListEntry:
     slug: str
     title: str
     year: Optional[int] = None
+    letterboxd_film_id: Optional[int] = None
 
 
 class PosterListingScraper:
@@ -70,7 +71,7 @@ class PosterListingScraper:
         films = find_poster_entries(soup)
         entries: List[FilmListEntry] = []
         for film in films:
-            slug, title = extract_film_metadata(film)
+            slug, title, lb_film_id = extract_film_metadata(film)
             if not slug or not title:
                 continue
             tooltip = film.get("title")
@@ -79,6 +80,7 @@ class PosterListingScraper:
                     slug=slug,
                     title=title,
                     year=extract_year(film, (title, tooltip)),
+                    letterboxd_film_id=lb_film_id,
                 )
             )
         return entries

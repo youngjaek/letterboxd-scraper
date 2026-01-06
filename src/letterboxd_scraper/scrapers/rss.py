@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import date, datetime
 from typing import Iterable, Optional
 from urllib.parse import urlparse
 
@@ -16,6 +16,8 @@ class RSSEntry:
     film_title: str
     rating: Optional[float]
     published: Optional[datetime]
+    watched_date: Optional[date]
+    tmdb_id: Optional[str]
 
 
 class RSSScraper:
@@ -42,6 +44,8 @@ class RSSScraper:
             published = (
                 datetime(*entry.published_parsed[:6]) if entry.get("published_parsed") else None
             )
+            watched_date = self._parse_watched_date(entry)
+            tmdb_id = entry.get("tmdb_movie_id") or entry.get("tmdb_movieid")
             if not film_slug or not film_title or rating is None:
                 continue
             yield RSSEntry(
@@ -49,6 +53,8 @@ class RSSScraper:
                 film_title=film_title,
                 rating=rating,
                 published=published,
+                watched_date=watched_date,
+                tmdb_id=tmdb_id,
             )
 
     @staticmethod
@@ -92,3 +98,16 @@ class RSSScraper:
         if "½" in star_section:
             rating += 0.5
         return rating
+
+    @staticmethod
+    def _parse_watched_date(entry: dict) -> Optional[date]:
+        value = entry.get("letterboxd_watched_date") or entry.get("letterboxd_watcheddate")
+        if not value:
+            return None
+        value = value.strip()
+        if not value:
+            return None
+        try:
+            return date.fromisoformat(value)
+        except ValueError:
+            return None

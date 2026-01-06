@@ -67,27 +67,33 @@ def find_poster_entries(soup: BeautifulSoup) -> List[Tag]:
     return deduped
 
 
-def extract_film_metadata(film: Tag) -> tuple[Optional[str], Optional[str]]:
+def extract_film_metadata(film: Tag) -> tuple[Optional[str], Optional[str], Optional[int]]:
     slug = film.get("data-film-slug")
     title = film.get("data-film-name") or film.get("data-film-title")
+    letterboxd_id = _coerce_int(film.get("data-film-id"))
     img = film.find("img", alt=True)
     if img:
         title = img.get("alt") or title
     div_with_slug = film.find("div", attrs={"data-film-slug": True})
     if div_with_slug:
         slug = slug or div_with_slug.get("data-film-slug")
+        letterboxd_id = letterboxd_id or _coerce_int(div_with_slug.get("data-film-id"))
     embedded = film.find(attrs={"data-item-slug": True})
     if embedded:
         slug = slug or embedded.get("data-item-slug")
         title = title or embedded.get("data-item-name")
+        letterboxd_id = letterboxd_id or _coerce_int(embedded.get("data-film-id"))
         slug = slug or slug_from_link(
             embedded.get("data-item-link") or embedded.get("data-target-link")
         )
+    candidate_with_id = film.find(attrs={"data-film-id": True})
+    if candidate_with_id and not letterboxd_id:
+        letterboxd_id = _coerce_int(candidate_with_id.get("data-film-id"))
     if not slug:
         link = film.find("a", href=True)
         if link:
             slug = slug_from_link(link["href"])
-    return slug, title
+    return slug, title, letterboxd_id
 
 
 def slug_from_link(link: Optional[str]) -> Optional[str]:
@@ -144,3 +150,17 @@ def _year_from_text(text: Optional[str]) -> Optional[int]:
     if not match:
         return None
     return _coerce_year(match.group(0))
+
+
+def _coerce_int(value: Optional[str]) -> Optional[int]:
+    if not value:
+        return None
+    value = value.strip()
+    if not value:
+        return None
+    if ":" in value:
+        value = value.split(":")[-1]
+    try:
+        return int(value)
+    except ValueError:
+        return None
