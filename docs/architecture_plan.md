@@ -22,10 +22,11 @@ config/
 
 ### Data Flow
 1. **Cohort definition**: given a seed user and depth rules, the follow graph scraper populates `cohort_members`.
-2. **Full scrape**: fetch every member’s ratings and insert/update the normalized `ratings` table.
-3. **Incremental loop**: RSS watcher polls members’ feeds for new/updated ratings or diary entries and patches rows in `ratings`.
-4. **Aggregation refresh**: scheduled job recalculates cohort-level stats and derived rankings (materialized views).
-5. **Exports/UI**: CLI commands read aggregates to generate CSVs, dashboards, or API responses.
+2. **Full scrape (phase 1)**: parallel worker pool crawls each member’s `/films/rated/.5-5/` pages plus `/likes/films/rated/none/`, inserting/updating the normalized `ratings` table. Release year is captured directly from the poster tiles and likes with no rating are stored as `rating=NULL, liked=TRUE`.
+3. **Enrichment pass (phase 2)**: opt-in command fetches TMDB metadata (IDs, runtime, directors, posters) and Letterboxd histogram stats from `/csi/film/{slug}/ratings-summary/` for films touched in phase 1, storing aggregate stats on `films` and `film_histograms`.
+4. **Incremental loop**: RSS watcher polls members’ feeds for new/updated ratings or diary entries and patches rows in `ratings`; run `scrape enrich` afterward if new films were introduced.
+5. **Aggregation refresh**: scheduled job recalculates cohort-level stats and derived rankings (materialized views).
+6. **Exports/UI**: CLI commands read aggregates to generate CSVs, dashboards, or API responses.
 
 ## Database Model (PostgreSQL or SQLite)
 
@@ -42,17 +43,30 @@ films (
     id SERIAL PRIMARY KEY,
     slug TEXT UNIQUE NOT NULL,
     title TEXT NOT NULL,
-    year INT,
-    poster_url TEXT
+    release_year INT,
+    release_date DATE,
+    tmdb_id INT,
+    imdb_id TEXT,
+    runtime_minutes INT,
+    poster_url TEXT,
+    overview TEXT,
+    origin_countries JSONB,
+    genres JSONB,
+    letterboxd_fan_count INT,
+    letterboxd_rating_count INT,
+    letterboxd_weighted_average NUMERIC(4,2),
+    tmdb_payload JSONB
 )
 
 ratings (
     user_id INT REFERENCES users(id),
     film_id INT REFERENCES films(id),
-    rating NUMERIC(3,1) NOT NULL,
+    rating NUMERIC(3,1),
     rated_at TIMESTAMP,
     updated_at TIMESTAMP DEFAULT NOW(),
     diary_entry_url TEXT,
+    liked BOOLEAN DEFAULT FALSE,
+    favorite BOOLEAN DEFAULT FALSE,
     PRIMARY KEY (user_id, film_id)
 )
 
@@ -82,7 +96,17 @@ cohort_film_stats (materialized view)
         MAX(r.updated_at) AS last_rating_at
     FROM ratings r
     JOIN cohort_members cm ON cm.user_id = r.user_id
+    WHERE r.rating IS NOT NULL
     GROUP BY 1,2;
+
+film_histograms (
+    id SERIAL PRIMARY KEY,
+    film_id INT REFERENCES films(id),
+    cohort_id INT REFERENCES cohorts(id),
+    bucket_label TEXT,
+    count INT,
+    computed_at TIMESTAMP DEFAULT NOW()
+)
 
 film_rankings (
     cohort_id INT,
@@ -100,14 +124,14 @@ film_rankings (
 ## Incremental Scraping Design
 1. **Full profile scraper**
    - Input: list of usernames (per cohort) + checkpoint state.
-   - For each user: paginate `/films/rated/…` pages, persist ratings, and store `last_full_scrape_at`.
+   - For each user (handled by a worker in the pool): paginate `/films/rated/…` pages and `/likes/films/rated/none/`, persist ratings/likes, and store `last_full_scrape_at`.
    - Supports `--resume-from user` via checkpoints table to survive crashes.
 
 2. **RSS watcher**
    - Poll interval configurable per user/cohort.
    - Reads RSS feed (`https://letterboxd.com/<user>/rss/`) and parses entries (diary/watch/reviews).
-   - Extract film slug + rating if present; if only diary entry exists, store watch event but leave rating NULL.
-   - Upsert into `ratings` (update `rating`, `rated_at`, `updated_at`) and enqueue a lightweight HTML fetch if the feed references a “rating updated” event.
+   - Extract film slug + rating if present; if only diary entry exists, store watch/like event but leave rating NULL.
+   - Upsert into `ratings` (update `rating`, `rated_at`, `updated_at`, `liked`, `favorite`). Run the enrichment command separately when new films are introduced.
 
 3. **Follow graph refresher**
    - Given cohort definition, crawl `/following` pages, diff against `cohort_members`, and insert/delete rows as needed.

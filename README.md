@@ -37,9 +37,10 @@ The Typer CLI surfaces each workflow step. Commands are grouped by workflow so y
 
 ### Scraping + stats commands
 
-- `letterboxd-scraper scrape full <cohort_id> [--resume]` — run a historical scrape for every cohort member.
-- `letterboxd-scraper scrape incremental <cohort_id>` — apply RSS-driven updates across the cohort.
-- `letterboxd-scraper stats refresh [--concurrent/--no-concurrent]` — rebuild the `cohort_film_stats` materialized view.
+- `letterboxd-scraper scrape full <cohort_id>` — parallel worker pool that fetches each member’s `/films/rated/.5-5/` pages **and** `/likes/films/rated/none/`, storing ratings plus unrated likes. This phase is intentionally lightweight (no TMDB or histogram calls) so hundreds of users can be scraped quickly.
+- `letterboxd-scraper scrape enrich [--tmdb/--no-tmdb] [--histograms/--no-histograms] [--limit N]` — second pass that hydrates touched films with TMDB metadata (IDs, runtime, poster, directors) and Letterboxd histogram stats from `/csi/film/{slug}/ratings-summary/`.
+- `letterboxd-scraper scrape incremental <cohort_id>` — RSS-driven updates that upsert new ratings/likes into `ratings` (no enrichment; follow with `scrape enrich` when convenient).
+- `letterboxd-scraper stats refresh [--concurrent/--no-concurrent]` — rebuild the `cohort_film_stats` materialized view (now only counting rows where `rating IS NOT NULL`).
 
 ### Ranking + export commands
 
@@ -76,6 +77,7 @@ Each command respects configuration passed via `.env`, environment variables, or
    letterboxd-scraper cohort build --seed my_username --label "My Friends"
    letterboxd-scraper cohort refresh 1
    letterboxd-scraper scrape full 1
+   letterboxd-scraper scrape enrich --tmdb --histograms
    letterboxd-scraper stats refresh
    letterboxd-scraper rank compute 1 --strategy bayesian
    letterboxd-scraper export csv 1 --strategy bayesian --output exported/my_friends.csv
