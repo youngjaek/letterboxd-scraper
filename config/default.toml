@@ -16,6 +16,12 @@ throttle_seconds = 1.0
 poll_interval_minutes = 60
 max_entries = 50
 
+[tmdb]
+api_key = ""
+base_url = "https://api.themoviedb.org/3"
+image_base_url = "https://image.tmdb.org/t/p/original"
+request_timeout_seconds = 10
+
 [cohort_defaults]
 include_seed = true
 follow_depth = 1

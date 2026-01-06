@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import contextlib
 import time
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Iterator, Optional
 
 from sqlalchemy.orm import Session
@@ -23,7 +23,7 @@ def record_scrape_run(
         run_type=run_type,
         status=status,
         notes=notes,
-        started_at=datetime.utcnow(),
+        started_at=datetime.now(timezone.utc),
     )
     session.add(run)
     session.flush()
@@ -40,7 +40,7 @@ def finalize_scrape_run(
     run = session.get(models.ScrapeRun, run_id)
     if not run:
         return
-    run.finished_at = datetime.utcnow()
+    run.finished_at = datetime.now(timezone.utc)
     if status:
         run.status = status
     if notes:

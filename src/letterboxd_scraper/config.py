@@ -41,6 +41,14 @@ class RSSSettings:
 
 
 @dataclass
+class TMDBSettings:
+    api_key: Optional[str] = None
+    base_url: str = "https://api.themoviedb.org/3"
+    image_base_url: str = "https://image.tmdb.org/t/p/original"
+    request_timeout_seconds: int = 10
+
+
+@dataclass
 class CohortDefaults:
     include_seed: bool = True
     follow_depth: int = 1
@@ -53,6 +61,7 @@ class Settings:
     database: DatabaseSettings
     scraper: ScraperSettings
     rss: RSSSettings
+    tmdb: TMDBSettings
     cohort_defaults: CohortDefaults
     raw: Dict[str, Any]
 
@@ -84,6 +93,7 @@ def load_settings(config_path: Optional[Path] = None) -> Settings:
     database_cfg = data.get("database", {})
     scraper_cfg = data.get("scraper", {})
     rss_cfg = data.get("rss", {})
+    tmdb_cfg = data.get("tmdb", {})
     cohort_cfg = data.get("cohort_defaults", {})
 
     db_settings = DatabaseSettings(
@@ -111,6 +121,17 @@ def load_settings(config_path: Optional[Path] = None) -> Settings:
         max_entries=int(os.getenv("RSS_MAX_ENTRIES", rss_cfg.get("max_entries", 50))),
     )
 
+    tmdb_settings = TMDBSettings(
+        api_key=os.getenv("TMDB_API_KEY", tmdb_cfg.get("api_key")),
+        base_url=os.getenv("TMDB_BASE_URL", tmdb_cfg.get("base_url", "https://api.themoviedb.org/3")),
+        image_base_url=os.getenv(
+            "TMDB_IMAGE_BASE_URL", tmdb_cfg.get("image_base_url", "https://image.tmdb.org/t/p/original")
+        ),
+        request_timeout_seconds=int(
+            os.getenv("TMDB_TIMEOUT", tmdb_cfg.get("request_timeout_seconds", 10))
+        ),
+    )
+
     cohort_settings = CohortDefaults(
         include_seed=bool_from_env("COHORT_INCLUDE_SEED", cohort_cfg.get("include_seed", True)),
         follow_depth=int(os.getenv("COHORT_FOLLOW_DEPTH", cohort_cfg.get("follow_depth", 1))),
@@ -122,6 +143,7 @@ def load_settings(config_path: Optional[Path] = None) -> Settings:
         database=db_settings,
         scraper=scraper_settings,
         rss=rss_settings,
+        tmdb=tmdb_settings,
         cohort_defaults=cohort_settings,
         raw=data,
     )

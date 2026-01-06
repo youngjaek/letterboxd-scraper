@@ -1,9 +1,10 @@
 from __future__ import annotations
 
 from collections import Counter
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from typing import Dict, Optional
+from typing import Any, Dict, Optional, Set
 
 import typer
 from rich.console import Console
@@ -20,10 +21,15 @@ from .services import rankings as ranking_service
 from .services import rss_updates as rss_service
 from .services import stats as stats_service
 from .services import telemetry as telemetry_service
+from .services.enrichment import enrich_film_metadata, film_needs_enrichment
+from .services import histograms as histogram_service
 from .scrapers.follow_graph import FollowGraphScraper, expand_follow_graph
 from .scrapers.listings import PosterListingScraper
 from .scrapers.ratings import ProfileRatingsScraper
 from .scrapers.rss import RSSScraper
+from .scrapers.histograms import RatingsHistogramScraper
+from .scrapers.film_pages import FilmPageScraper
+from .services.tmdb import TMDBClient
 
 console = Console()
 
@@ -47,6 +53,24 @@ app.add_typer(export_app, name="export")
 
 def get_state(ctx: typer.Context) -> Dict[str, Settings]:
     return ctx.ensure_object(dict)  # type: ignore[return-value]
+
+
+def _scrape_user_ratings(settings: Settings, username: str) -> tuple[int, Set[int]]:
+    """Fetch ratings + likes for a single user and persist them."""
+    scraper = ProfileRatingsScraper(settings)
+    try:
+        ratings = list(scraper.fetch_user_ratings(username))
+        likes = list(scraper.fetch_user_liked_films(username))
+    finally:
+        scraper.close()
+    rated_slugs = {item.film_slug for item in ratings}
+    likes_only = [item for item in likes if item.film_slug not in rated_slugs]
+    combined = ratings + likes_only
+    if not combined:
+        return 0, set()
+    with get_session(settings) as session:
+        touched = rating_service.upsert_ratings(session, username, combined)
+    return len(combined), touched
 
 
 @app.callback()
@@ -201,27 +225,45 @@ def scrape_full(
         )
     status = "success"
     note = None
-    scraper = ProfileRatingsScraper(settings)
+    touched_films: set[int] = set()
     try:
         with telemetry_service.timed_operation(f"scrape_full[{cohort_id}]"):
-            for username in usernames:
-                with telemetry_service.timed_operation(f"user[{username}]"):
-                    console.print(f"[cyan]Scraping[/cyan] ratings for {username}...")
-                    ratings_iter = scraper.fetch_user_ratings(username)
-                    with get_session(settings) as session:
-                        rating_service.upsert_ratings(session, username, ratings_iter)
+            max_workers = max(1, settings.scraper.max_concurrency)
+            console.print(
+                f"[green]Queued[/green] {len(usernames)} users "
+                f"with {max_workers} worker(s)."
+            )
+            futures: Dict[Any, str] = {}
+            with ThreadPoolExecutor(max_workers=max_workers) as executor:
+                for username in usernames:
+                    futures[executor.submit(_scrape_user_ratings, settings, username)] = username
+                for future in as_completed(futures):
+                    username = futures[future]
+                    try:
+                        count, touched = future.result()
+                        touched_films.update(touched)
+                        console.print(
+                            f"[cyan]{username}[/cyan]: processed {count} ratings/likes."
+                        )
+                    except Exception as exc:
+                        status = "failed"
+                        note = f"{username} failed: {exc}"
+                        raise
     except Exception as exc:
         status = "failed"
         note = str(exc)
         raise
     finally:
-        scraper.close()
         if run_id:
             with get_session(settings) as session:
                 telemetry_service.finalize_scrape_run(
                     session, run_id, status=status, notes=note
                 )
     console.print(f"[green]Completed[/green] full scrape for cohort {cohort_id}.")
+    console.print(
+        f"[yellow]Next[/yellow]: run 'letterboxd-scraper scrape enrich' to hydrate "
+        f"metadata for {len(touched_films)} films."
+    )
 
 
 @scrape_app.command("incremental")
@@ -257,7 +299,11 @@ def scrape_incremental(
                 if not entries:
                     continue
                 with get_session(settings) as session:
-                    updated = rss_service.apply_rss_entries(session, username, entries)
+                    updated = rss_service.apply_rss_entries(
+                        session,
+                        username,
+                        entries,
+                    )
                     total_updates += updated
                 console.print(f"[cyan]{username}[/cyan]: applied {len(entries)} RSS entries.")
     except Exception as exc:
@@ -271,6 +317,76 @@ def scrape_incremental(
                     session, run_id, status=status, notes=note
                 )
     console.print(f"[green]Incremental update complete[/green]; {total_updates} ratings touched.")
+    console.print(
+        "[yellow]Reminder[/yellow]: run 'letterboxd-scraper scrape enrich' when you're ready to refresh film metadata."
+    )
+
+
+@scrape_app.command("enrich")
+def scrape_enrich(
+    ctx: typer.Context,
+    limit: Optional[int] = typer.Option(None, "--limit", help="Maximum films to enrich."),
+    include_tmdb: bool = typer.Option(True, "--tmdb/--no-tmdb", help="Pull metadata from TMDB."),
+    include_histograms: bool = typer.Option(
+        True, "--histograms/--no-histograms", help="Refresh Letterboxd histogram stats."
+    ),
+) -> None:
+    """Hydrate films with TMDB metadata and/or Letterboxd histograms."""
+    settings = get_state(ctx)["settings"]
+    if not include_tmdb and not include_histograms:
+        typer.echo("Enable at least one of --tmdb or --histograms.")
+        raise typer.Exit(code=1)
+    if include_tmdb and not settings.tmdb.api_key:
+        console.print("[yellow]TMDB API key not configured[/yellow]; skipping TMDB enrichment.")
+        include_tmdb = False
+    tmdb_client = None
+    film_page_scraper = None
+    histogram_scraper: Optional[RatingsHistogramScraper] = None
+    if include_tmdb and settings.tmdb.api_key:
+        tmdb_client = TMDBClient(settings)
+        film_page_scraper = FilmPageScraper(settings)
+    if include_histograms:
+        histogram_scraper = RatingsHistogramScraper(settings)
+    processed = 0
+    try:
+        with get_session(settings) as session:
+            films = session.query(models.Film).order_by(models.Film.id).all()
+            for film in films:
+                touched = False
+                if include_tmdb and tmdb_client and film_needs_enrichment(film):
+                    try:
+                        success = enrich_film_metadata(
+                            session,
+                            film,
+                            client=tmdb_client,
+                            film_page_scraper=film_page_scraper,
+                        )
+                        if success:
+                            console.print(f"[green]TMDB[/green] {film.slug}")
+                        touched = touched or success
+                    except Exception as exc:  # pragma: no cover - safety log
+                        console.print(f"[red]TMDB failed[/red] {film.slug}: {exc}")
+                if include_histograms and histogram_scraper and histogram_service.film_needs_histogram(film):
+                    try:
+                        summary = histogram_scraper.fetch(film.slug)
+                        histogram_service.upsert_global_histogram(session, film, summary)
+                        console.print(f"[cyan]Histogram[/cyan] {film.slug}")
+                        touched = True
+                    except Exception as exc:  # pragma: no cover
+                        console.print(f"[red]Histogram failed[/red] {film.slug}: {exc}")
+                if touched:
+                    processed += 1
+                    session.flush()
+                    if limit and processed >= limit:
+                        break
+    finally:
+        if film_page_scraper:
+            film_page_scraper.close()
+        if tmdb_client:
+            tmdb_client.close()
+        if histogram_scraper:
+            histogram_scraper.close()
+    console.print(f"[green]Enrichment complete[/green]; processed {processed} films.")
 
 
 @rank_app.command("compute")

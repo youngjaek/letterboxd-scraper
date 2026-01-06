@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Iterable, Optional, Tuple, List, Union
 
 from sqlalchemy import select
@@ -67,7 +67,7 @@ def rename_cohort(session: Session, cohort_id: int, new_label: str) -> Optional[
     if not cohort:
         return None
     cohort.label = new_label
-    cohort.updated_at = datetime.utcnow()
+    cohort.updated_at = datetime.now(timezone.utc)
     return cohort
 
 
