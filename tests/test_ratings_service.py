@@ -159,3 +159,52 @@ def test_upsert_ratings_updates_last_full_scrape_timestamp():
     user = session.execute(select(models.User)).scalar_one()
     assert user.last_full_scrape_at is not None
     session.close()
+
+
+def test_upsert_ratings_can_skip_last_full_scrape_timestamp():
+    session = make_session()
+    rating_service.upsert_ratings(session, "skip", [], touch_last_full=False)
+    session.commit()
+    user = session.execute(select(models.User)).scalar_one()
+    assert user.last_full_scrape_at is None
+    session.close()
+
+
+def test_get_user_rating_snapshot_and_match_logic():
+    session = make_session()
+    initial = [
+        FilmRating(
+            film_slug="existing-film",
+            film_title="Existing",
+            rating=4.0,
+            liked=True,
+        ),
+        FilmRating(
+            film_slug="liked-only",
+            film_title="Liked Only",
+            rating=None,
+            liked=True,
+        ),
+    ]
+    rating_service.upsert_ratings(session, "tester", initial)
+    session.commit()
+    snapshot = rating_service.get_user_rating_snapshot(session, "tester")
+    assert snapshot["existing-film"] == 4.0
+    assert snapshot["liked-only"] is None
+    assert rating_service.rating_matches_snapshot(
+        snapshot,
+        FilmRating(film_slug="existing-film", film_title="Existing", rating=4.0),
+    )
+    assert not rating_service.rating_matches_snapshot(
+        snapshot,
+        FilmRating(film_slug="existing-film", film_title="Existing", rating=3.5),
+    )
+    assert rating_service.rating_matches_snapshot(
+        snapshot,
+        FilmRating(film_slug="liked-only", film_title="Liked Only", rating=None, liked=True),
+    )
+    assert not rating_service.rating_matches_snapshot(
+        snapshot,
+        FilmRating(film_slug="new-film", film_title="New", rating=5.0),
+    )
+    session.close()

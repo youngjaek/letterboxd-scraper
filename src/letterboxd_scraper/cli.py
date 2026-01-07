@@ -18,15 +18,13 @@ from .services import export as export_service
 from .services import insights as insight_service
 from .services import ratings as rating_service
 from .services import rankings as ranking_service
-from .services import rss_updates as rss_service
 from .services import stats as stats_service
 from .services import telemetry as telemetry_service
 from .services.enrichment import enrich_film_metadata, film_needs_enrichment
 from .services import histograms as histogram_service
 from .scrapers.follow_graph import FollowGraphScraper, expand_follow_graph
 from .scrapers.listings import PosterListingScraper
-from .scrapers.ratings import ProfileRatingsScraper
-from .scrapers.rss import RSSScraper
+from .scrapers.ratings import FilmRating, ProfileRatingsScraper
 from .scrapers.histograms import RatingsHistogramScraper
 from .scrapers.film_pages import FilmPageScraper
 from .services.tmdb import TMDBClient
@@ -55,19 +53,43 @@ def get_state(ctx: typer.Context) -> Dict[str, Settings]:
     return ctx.ensure_object(dict)  # type: ignore[return-value]
 
 
-def _scrape_user_ratings(settings: Settings, username: str) -> tuple[int, Set[int]]:
+def _scrape_user_ratings(
+    settings: Settings,
+    username: str,
+    *,
+    incremental: bool = False,
+) -> tuple[int, Set[int]]:
     """Fetch ratings + likes for a single user and persist them."""
+    snapshot: Optional[dict[str, Optional[float]]] = None
+    if incremental:
+        with get_session(settings) as session:
+            snapshot = rating_service.get_user_rating_snapshot(session, username)
     scraper = ProfileRatingsScraper(settings)
     try:
-        ratings = list(scraper.fetch_user_ratings(username))
-        likes = list(scraper.fetch_user_liked_films(username))
+        ratings: list[FilmRating] = []
+        for payload in scraper.fetch_user_ratings(username):
+            if incremental and rating_service.rating_matches_snapshot(snapshot, payload):
+                break
+            ratings.append(payload)
+        rated_slugs = {item.film_slug for item in ratings}
+        likes: list[FilmRating] = []
+        for payload in scraper.fetch_user_liked_films(username):
+            if payload.film_slug in rated_slugs:
+                continue
+            if incremental and rating_service.rating_matches_snapshot(snapshot, payload):
+                break
+            likes.append(payload)
     finally:
         scraper.close()
-    rated_slugs = {item.film_slug for item in ratings}
     likes_only = [item for item in likes if item.film_slug not in rated_slugs]
     combined = ratings + likes_only
     with get_session(settings) as session:
-        touched = rating_service.upsert_ratings(session, username, combined)
+        touched = rating_service.upsert_ratings(
+            session,
+            username,
+            combined,
+            touch_last_full=not incremental,
+        )
     return len(combined), touched
 
 
@@ -295,7 +317,7 @@ def scrape_incremental(
     ctx: typer.Context,
     cohort_id: int = typer.Argument(..., help="Cohort identifier."),
 ) -> None:
-    """Apply incremental updates via RSS feeds + lightweight scraping."""
+    """Apply incremental updates via rated-date scraping."""
     settings = get_state(ctx)["settings"]
     with get_session(settings) as session:
         cohort = cohort_service.get_cohort(session, cohort_id)
@@ -303,6 +325,9 @@ def scrape_incremental(
             typer.echo(f"Cohort {cohort_id} not found.")
             raise typer.Exit(code=1)
         usernames = cohort_service.list_member_usernames(session, cohort_id)
+    if not usernames:
+        console.print(f"[yellow]Cohort[/yellow] {cohort_id} has no members to scrape.")
+        return
     run_id = None
     with get_session(settings) as session:
         run_id = telemetry_service.record_scrape_run(
@@ -313,23 +338,37 @@ def scrape_incremental(
         )
     status = "success"
     note = None
-    rss_scraper = RSSScraper(settings)
-    total_updates = 0
+    touched_films: set[int] = set()
     try:
         with telemetry_service.timed_operation(f"scrape_incremental[{cohort_id}]"):
-            for username in usernames:
-                with telemetry_service.timed_operation(f"rss[{username}]"):
-                    entries = list(rss_scraper.fetch_feed(username))
-                if not entries:
-                    continue
-                with get_session(settings) as session:
-                    updated = rss_service.apply_rss_entries(
-                        session,
-                        username,
-                        entries,
-                    )
-                    total_updates += updated
-                console.print(f"[cyan]{username}[/cyan]: applied {len(entries)} RSS entries.")
+            max_workers = max(1, settings.scraper.max_concurrency)
+            console.print(
+                f"[green]Queued[/green] {len(usernames)} users "
+                f"with {max_workers} worker(s)."
+            )
+            futures: Dict[Any, str] = {}
+            with ThreadPoolExecutor(max_workers=max_workers) as executor:
+                for username in usernames:
+                    futures[
+                        executor.submit(
+                            _scrape_user_ratings,
+                            settings,
+                            username,
+                            incremental=True,
+                        )
+                    ] = username
+                for future in as_completed(futures):
+                    username = futures[future]
+                    try:
+                        count, touched = future.result()
+                        touched_films.update(touched)
+                        console.print(
+                            f"[cyan]{username}[/cyan]: processed {count} incremental tiles."
+                        )
+                    except Exception as exc:
+                        status = "failed"
+                        note = f"{username} failed: {exc}"
+                        raise
     except Exception as exc:
         status = "failed"
         note = str(exc)
@@ -340,10 +379,12 @@ def scrape_incremental(
                 telemetry_service.finalize_scrape_run(
                     session, run_id, status=status, notes=note
                 )
-    console.print(f"[green]Incremental update complete[/green]; {total_updates} ratings touched.")
-    console.print(
-        "[yellow]Reminder[/yellow]: run 'letterboxd-scraper scrape enrich' when you're ready to refresh film metadata."
-    )
+    console.print(f"[green]Incremental update complete[/green]; {len(touched_films)} films touched.")
+    if touched_films:
+        console.print(
+            f"[yellow]Next[/yellow]: run 'letterboxd-scraper scrape enrich' "
+            f"to hydrate metadata for {len(touched_films)} films."
+        )
 
 
 @scrape_app.command("enrich")

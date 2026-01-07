@@ -14,7 +14,7 @@ This document captures the current vision, architectural direction, and phased r
 Deliver a “Cohort Almanac” experience where any Letterboxd user can:
 
 1. Define a cohort (followers, critics, list members) without touching CLI commands.
-2. Keep that cohort’s ratings/likes synchronized via full scrapes + incremental RSS updates.
+2. Keep that cohort’s ratings/likes synchronized via full scrapes plus incremental rated-date deltas that stop once the scraped `(user_id, film_id, rating)` triple already exists in the DB.
 3. Explore ready-made insights: top-ranked films, hidden gems, divergence from global averages, favourites/likes, temporal slices, director/genre filters, etc.
 4. Share or export curated lists (CSV, shareable links, Letterboxd list templates) powered by their trusted circle instead of the global crowd.
 
@@ -25,11 +25,11 @@ Scraping remains an internal implementation detail; end users interact with a UI
 We graduate each phase only when the platform meets these measurable targets:
 
 - **Data completeness:** ≥99% of tiles per scrape include rating, like/favourite flags, and TMDB IDs (remaining outliers land in a tracked “needs enrichment” queue).
-- **Freshness:** Full-cohort rebuild (≤100 members, 30–40k films) completes within 30 minutes end-to-end; incremental RSS updates persist to the DB within 5 minutes for 95% of events.
+- **Freshness:** Full-cohort rebuild (≤100 members, 30–40k films) completes within 30 minutes end-to-end; incremental rated-date scrapes persist to the DB within 5 minutes for 95% of deltas.
 - **Data integrity:** Zero duplicate `(user_id, film_id)` rows post-run; histogram totals reconcile with ratings within ±1% or the pipeline fails fast.
 - **Pipeline reliability:** Scrape → enrichment → stats workflow succeeds ≥98% over a rolling 7-day window with automatic retries capped at 3 per job.
 - **API latency:** Cached cohort-stats endpoints return <750 ms at p95, uncached heavy queries <3 s at p95 while serving ≥10 concurrent cohorts.
-- **Test & tooling:** Regression tests cover scraper parsing, RSS handling, TMDB enrichment, and stats aggregation; CI gates merges on these suites.
+- **Test & tooling:** Regression tests cover scraper parsing, rated-date delta handling, TMDB enrichment, and stats aggregation; CI gates merges on these suites.
 - **Compliance:** All outbound fetches identify our polite user agent, respect Letterboxd/TMDB rate limits, and emit the attribution copy before any UI/export release.
 
 ## Collaboration & Learning Notes
@@ -42,17 +42,17 @@ We graduate each phase only when the platform meets these measurable targets:
 
 | Source | Purpose | Notes |
 | --- | --- | --- |
-| `/user/films/rated/.5-5/page/{n}/` | Ratings + likes per user | Extend current scraper to capture liked/favourited state per tile (classes like `icon-liked`, `poster-liked`). |
-| `/user/likes/films/rated/none/` | Films that were liked but not rated | Uses the same poster grid; store `rating=NULL`, `liked=TRUE`. |
+| `/user/films/rated/.5-5/page/{n}/` + `/by/rated-date/` | Ratings + likes per user | Extend current scraper to capture liked/favourited state per tile (classes like `icon-liked`, `poster-liked`). Incremental runs hit the `by/rated-date` sort (newest rating first), update a row if the rating changed, and halt when `(user_id, film_id, rating)` already matches the DB. |
+| `/user/likes/films/rated/none/` | Films that were liked but not rated | Uses the same poster grid; store `rating=NULL`, `liked=TRUE`. Default sort (“when liked”) already surfaces newest likes first, so incremental runs can stop once the DB matches while occasional full sweeps catch rare like removals/re-adds. |
 | `/film/{slug}/` page | Film metadata, TMDB ID, internal film ID | `<body data-tmdb-id="1018">` exposes TMDB linkage; poster modal includes `data-film-id`, `data-details-endpoint`. |
 | `/film/{slug}/json/` | Structured film metadata | JSON payload powering poster modal; includes rating summaries, like counts, release info. |
 | `/csi/film/{slug}/ratings-summary/` | Rating histogram (½-star buckets) | Needed for cohort-level distribution comparisons. |
 | TMDB API (`movie/{id}`, `movie/{id}/credits`) | Posters, genres, runtimes, release dates, crew/directors | Use slug→TMDB ID mapping from the film page to enrich `films`; pull credits to extract `job == "Director"` entries. |
-| RSS feeds (`/{user}/rss/`) | Incremental rating updates | Entries expose star rating, film slug, TMDB ID (see `tests/fixtures/rss/*.xml`); no likes info observed, so likes/follows still require periodic page scrapes. |
 
 ### Scraper Improvements
 
 - **Metadata persistence:** Update `services.ratings.get_or_create_film` to store title, release year, TMDB ID, poster URL, runtime, directors, and other TMDB-derived fields. Add a background job that enriches any newly seen slug.
+- **Incremental rated-date ingest:** When scraping `/by/rated-date/`, walk tiles newest-to-oldest, upsert if the rating changed, and halt once the scraped `(user_id, film_id, rating)` triple already matches what’s stored. Persist the latest `liked/favorite` flags during the same pass so the DB stays aligned with re-rates that bubble to the top.
 - **Likes/favourites:** Add `liked` and `favorite` boolean columns to `ratings` (or a separate `user_reactions` table) so per-film like counts and favourite percentages can be aggregated.
 - **Rating distributions:** When scraping `/film/{slug}/json/` or the CSI histogram, persist counts per rating bucket per cohort (could be a JSON field or a dedicated `film_histograms` table). This differentiates films with the same average but different consensus profiles.
 - **Throttling & compliance:** Maintain the `ThrottledClient`, add jitter/backoff, and document polite crawling best practices (delay, user-agent, cap on frequency) to avoid stressing Letterboxd.
@@ -82,7 +82,7 @@ Materialized view `cohort_film_stats` will be extended to include:
 
 - Snapshot the current ~200-user dataset for regression testing, then treat the upcoming schema as a clean break (drop/recreate tables).
 - Provide a `bootstrap_full_cohort` command that truncates derived tables, re-seeds cohorts, runs full scrapes, enriches films, and backfills histograms so we can redeploy or migrate anytime.
-- Version fixtures for RSS feeds, film pages, and TMDB payloads so automated tests stay deterministic even as the production database is rebuilt.
+- Version fixtures for rated-date poster grids, likes pages, and TMDB payloads so automated tests stay deterministic even as the production database is rebuilt.
 - Once the schema stabilizes, reuse the same command for controlled reprocessing (e.g., new histogram logic) instead of ad-hoc SQL migrations.
 
 ## Application Architecture
@@ -103,7 +103,9 @@ Materialized view `cohort_film_stats` will be extended to include:
         │  - Follow graph   │
         │  - Ratings/likes  │
         │  - Film metadata  │
-        │  - RSS updates    │
+        │  - Incremental    │
+        │    rated-date     │
+        │    updates        │
         └─────────┬─────────┘
                   │ SQLAlchemy
         ┌─────────▼─────────┐
@@ -161,14 +163,14 @@ Prebuilt slices:
 4. Persist rating histograms via `/json/` + `/csi/` endpoints and derive consensus tags.
 5. Simplify or retire legacy scraper helpers that TMDB replaces (e.g., poster parsing) and remove the existing “smart bucket” implementation if the new filter system supersedes it.
 6. Expand automated tests (unit + integration with fixtures).
-7. Exit criteria: <30 min cohort rebuild, ≥99% TMDB coverage, RSS delta tests green, and zero duplicate `(user_id, film_id)` rows in `ratings`.
+7. Exit criteria: <30 min cohort rebuild, ≥99% TMDB coverage, rated-date delta tests green, and zero duplicate `(user_id, film_id)` rows in `ratings`.
 
 ### Phase 2 — Pipeline Automation
 
 1. Build a job runner (Celery/RQ/APS) that chains existing CLI steps:
    - `cohort refresh` → `scrape full` (or incremental) → `stats refresh` → `rank compute` → `rank buckets`.
 2. Implement telemetry/monitoring using `services.telemetry` outputs; add dashboards/log shipping plus SLO alerts on latency/failure rate.
-3. Schedule RSS-driven incremental updates plus periodic metadata enrichment with worker pools respecting tuned concurrency caps.
+3. Schedule rated-date incremental updates plus periodic metadata enrichment with worker pools respecting tuned concurrency caps.
 4. Add admin tooling to inspect scrape runs, cohort health, and film sync status; expose replay/backfill buttons per cohort.
 5. Introduce shared caches (Redis/memcached) so frequent stats queries reuse precomputed cohort snapshots instead of recomputing on every request.
 

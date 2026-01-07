@@ -34,11 +34,18 @@ class ProfileRatingsScraper:
         self.settings = settings
         self.client = ThrottledClient(settings)
 
-    def fetch_user_ratings(self, username: str) -> Iterable[FilmRating]:
+    def fetch_user_ratings(
+        self,
+        username: str,
+        sort: Optional[str] = "rated-date",
+    ) -> Iterable[FilmRating]:
         favorite_slugs = self._fetch_favorite_slugs(username)
         page = 1
+        base_url = f"https://letterboxd.com/{username}/films/rated/.5-5/"
+        if sort:
+            base_url += f"by/{sort}/"
         while True:
-            url = f"https://letterboxd.com/{username}/films/rated/.5-5/page/{page}/"
+            url = f"{base_url}page/{page}/"
             response = self.client.get(url)
             soup = parse_html_document(response.text)
             films = find_poster_entries(soup)

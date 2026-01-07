@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
+from decimal import Decimal
 from typing import Iterable, Optional, Set
 
 from sqlalchemy import select
@@ -56,6 +57,8 @@ def upsert_ratings(
     session: Session,
     username: str,
     ratings: Iterable[FilmRating],
+    *,
+    touch_last_full: bool = True,
 ) -> Set[int]:
     user = get_or_create_user(session, username)
     touched: Set[int] = set()
@@ -84,9 +87,40 @@ def upsert_ratings(
                 favorite=bool(payload.favorite),
             )
             session.add(rating)
-    user.last_full_scrape_at = datetime.now(timezone.utc)
+    if touch_last_full:
+        user.last_full_scrape_at = datetime.now(timezone.utc)
     session.flush()
     return touched
+
+
+def get_user_rating_snapshot(session: Session, username: str) -> dict[str, Optional[float]]:
+    """Return the existing `(slug -> rating)` map for a user."""
+    stmt = (
+        select(models.Film.slug, models.Rating.rating)
+        .join(models.Rating, models.Rating.film_id == models.Film.id)
+        .join(models.User, models.User.id == models.Rating.user_id)
+        .where(models.User.letterboxd_username == username)
+    )
+    snapshot: dict[str, Optional[float]] = {}
+    for slug, rating in session.execute(stmt):
+        snapshot[slug] = _normalize_rating_value(rating)
+    return snapshot
+
+
+def rating_matches_snapshot(
+    snapshot: Optional[dict[str, Optional[float]]],
+    payload: FilmRating,
+) -> bool:
+    if not snapshot:
+        return False
+    if payload.film_slug not in snapshot:
+        return False
+    stored = snapshot[payload.film_slug]
+    if stored is None and payload.rating is None:
+        return True
+    if stored is None or payload.rating is None:
+        return False
+    return abs(stored - payload.rating) < 1e-6
 
 
 def _normalize_tmdb_id(value: Optional[str | int]) -> Optional[int]:
@@ -117,3 +151,11 @@ def _normalize_letterboxd_id(value: Optional[str | int]) -> Optional[int]:
         return int(value)
     except ValueError:
         return None
+
+
+def _normalize_rating_value(value: Optional[float | Decimal]) -> Optional[float]:
+    if value is None:
+        return None
+    if isinstance(value, Decimal):
+        return float(value)
+    return float(value)
