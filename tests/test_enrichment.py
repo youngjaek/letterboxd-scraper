@@ -195,11 +195,21 @@ def test_film_needs_enrichment_checks_fields():
         slug="complete",
         title="Complete",
         tmdb_id=1,
+        release_year=2020,
         runtime_minutes=100,
         poster_url="poster",
         overview="desc",
         genres=[{"id": 1}],
     )
+    film.people = [
+        models.FilmPerson(
+            film_id=0,
+            person_id=None,
+            name="Director Example",
+            role="director",
+            credit_order=1,
+        )
+    ]
     assert enrichment.film_needs_enrichment(film) is False
     film.poster_url = None
     assert enrichment.film_needs_enrichment(film) is True

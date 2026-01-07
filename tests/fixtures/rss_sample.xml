@@ -1,0 +1,59 @@
+<?xml version='1.0' encoding='utf-8'?>
+<rss version="2.0" xmlns:atom="http://www.w3.org/2005/Atom" xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:letterboxd="https://letterboxd.com" xmlns:tmdb="https://themoviedb.org">
+  <channel>
+    <title>Letterboxd - Sample User</title>
+    <link>https://letterboxd.com/sample_user/</link>
+    <description>Letterboxd - Sample User</description>
+    <atom:link rel="self" href="https://letterboxd.com/sample_user/rss/" type="application/rss+xml"/>
+    <item>
+      <title>The Passion According to G.H., 2023 - ★★</title>
+      <link>https://letterboxd.com/sample_user/film/the-passion-according-to-gh/</link>
+      <guid isPermaLink="false">letterboxd-review-1115733957</guid>
+      <pubDate>Tue, 23 Dec 2025 10:42:16 +1300</pubDate>
+      <letterboxd:watchedDate>2025-12-22</letterboxd:watchedDate>
+      <letterboxd:filmTitle>The Passion According to G.H.</letterboxd:filmTitle>
+      <letterboxd:memberRating>2.0</letterboxd:memberRating>
+      <tmdb:movieId>566268</tmdb:movieId>
+    </item>
+    <item>
+      <title>Castration Movie Anthology i. Traps, 2024 - ★★★★</title>
+      <link>https://letterboxd.com/sample_user/film/castration-movie-anthology-i-traps/</link>
+      <guid isPermaLink="false">letterboxd-review-1115475965</guid>
+      <pubDate>Tue, 23 Dec 2025 07:55:40 +1300</pubDate>
+      <letterboxd:watchedDate>2025-12-22</letterboxd:watchedDate>
+      <letterboxd:filmTitle>Castration Movie Anthology i. Traps</letterboxd:filmTitle>
+      <letterboxd:memberRating>4.0</letterboxd:memberRating>
+      <tmdb:movieId>1243479</tmdb:movieId>
+    </item>
+    <item>
+      <title>Wake Up Dead Man, 2025 - ★★★</title>
+      <link>https://letterboxd.com/sample_user/film/wake-up-dead-man/</link>
+      <guid isPermaLink="false">letterboxd-review-1114834059</guid>
+      <pubDate>Mon, 22 Dec 2025 20:26:47 +1300</pubDate>
+      <letterboxd:watchedDate>2025-12-22</letterboxd:watchedDate>
+      <letterboxd:filmTitle>Wake Up Dead Man</letterboxd:filmTitle>
+      <letterboxd:memberRating>3.0</letterboxd:memberRating>
+      <tmdb:movieId>812583</tmdb:movieId>
+    </item>
+    <item>
+      <title>A Girl Named Ann, 2024 - ★★½</title>
+      <link>https://letterboxd.com/sample_user/film/a-girl-named-ann/</link>
+      <guid isPermaLink="false">letterboxd-review-1114633781</guid>
+      <pubDate>Mon, 22 Dec 2025 17:16:18 +1300</pubDate>
+      <letterboxd:watchedDate>2025-12-21</letterboxd:watchedDate>
+      <letterboxd:filmTitle>A Girl Named Ann</letterboxd:filmTitle>
+      <letterboxd:memberRating>2.5</letterboxd:memberRating>
+      <tmdb:movieId>1219439</tmdb:movieId>
+    </item>
+    <item>
+      <title>71 Fragments of a Chronology of Chance, 1994 - ★★★★</title>
+      <link>https://letterboxd.com/sample_user/film/71-fragments-of-a-chronology-of-chance/</link>
+      <guid isPermaLink="false">letterboxd-review-1114381796</guid>
+      <pubDate>Mon, 22 Dec 2025 09:31:15 +1300</pubDate>
+      <letterboxd:watchedDate>2025-12-21</letterboxd:watchedDate>
+      <letterboxd:filmTitle>71 Fragments of a Chronology of Chance</letterboxd:filmTitle>
+      <letterboxd:memberRating>4.0</letterboxd:memberRating>
+      <tmdb:movieId>46696</tmdb:movieId>
+    </item>
+  </channel>
+</rss>

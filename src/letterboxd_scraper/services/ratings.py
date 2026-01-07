@@ -84,6 +84,8 @@ def upsert_ratings(
                 favorite=bool(payload.favorite),
             )
             session.add(rating)
+    user.last_full_scrape_at = datetime.now(timezone.utc)
+    session.flush()
     return touched
 
 

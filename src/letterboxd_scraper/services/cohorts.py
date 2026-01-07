@@ -89,6 +89,15 @@ def list_member_usernames(session: Session, cohort_id: int) -> list[str]:
     return [row[0] for row in session.execute(stmt)]
 
 
+def list_member_scrape_freshness(session: Session, cohort_id: int) -> list[Tuple[str, Optional[datetime]]]:
+    stmt = (
+        select(models.User.letterboxd_username, models.User.last_full_scrape_at)
+        .join(models.CohortMember, models.CohortMember.user_id == models.User.id)
+        .where(models.CohortMember.cohort_id == cohort_id)
+    )
+    return [(row[0], row[1]) for row in session.execute(stmt)]
+
+
 def refresh_cohort_members(
     session: Session,
     cohort: models.Cohort,

@@ -124,6 +124,12 @@ def extract_year(film: Tag, fallbacks: Sequence[str] = ()) -> Optional[int]:
         year = _coerce_year(candidate.get("data-film-release-year"))
         if year:
             return year
+    for attr in ("data-film-name", "data-item-name", "data-film-title"):
+        nested = film.find(attrs={attr: True})
+        if nested:
+            year = _year_from_text(nested.get(attr))
+            if year:
+                return year
     for text in fallbacks:
         year = _year_from_text(text)
         if year:

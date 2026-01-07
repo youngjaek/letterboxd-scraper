@@ -150,3 +150,12 @@ def test_upsert_ratings_handles_unrated_likes():
     film = session.execute(select(models.Film)).scalar_one()
     assert film.release_year == 2010
     session.close()
+
+
+def test_upsert_ratings_updates_last_full_scrape_timestamp():
+    session = make_session()
+    rating_service.upsert_ratings(session, "fresh", [])
+    session.commit()
+    user = session.execute(select(models.User)).scalar_one()
+    assert user.last_full_scrape_at is not None
+    session.close()

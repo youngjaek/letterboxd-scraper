@@ -56,14 +56,14 @@ def test_rss_scraper_parses_real_fixture(monkeypatch, tmp_path):
     settings = make_settings()
     settings.rss.max_entries = 5
     scraper = RSSScraper(settings)
-    fixture_path = Path(__file__).parent / "fixtures" / "w6n1JTqn.xml"
+    fixture_path = Path(__file__).parent / "fixtures" / "rss_sample.xml"
 
     class MockFeed:
         entries = []
 
     import feedparser
 
-    real_feed = feedparser.parse(fixture_path)
+    real_feed = feedparser.parse(str(fixture_path))
 
     def mock_parse(url):
         return real_feed

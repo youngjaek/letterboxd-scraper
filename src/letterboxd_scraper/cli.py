@@ -66,8 +66,6 @@ def _scrape_user_ratings(settings: Settings, username: str) -> tuple[int, Set[in
     rated_slugs = {item.film_slug for item in ratings}
     likes_only = [item for item in likes if item.film_slug not in rated_slugs]
     combined = ratings + likes_only
-    if not combined:
-        return 0, set()
     with get_session(settings) as session:
         touched = rating_service.upsert_ratings(session, username, combined)
     return len(combined), touched
@@ -209,12 +207,38 @@ def scrape_full(
 ) -> None:
     """Run a full historical scrape for every user in the cohort."""
     settings = get_state(ctx)["settings"]
-    usernames: list[str]
+    usernames: list[str] = []
+    skipped: list[str] = []
     with get_session(settings) as session:
         if not cohort_service.get_cohort(session, cohort_id):
             typer.echo(f"Cohort {cohort_id} not found.")
             raise typer.Exit(code=1)
-        usernames = cohort_service.list_member_usernames(session, cohort_id)
+        members = cohort_service.list_member_scrape_freshness(session, cohort_id)
+    total_members = len(members)
+    ttl_hours = max(0, getattr(settings.scraper, "full_scrape_ttl_hours", 0))
+    cutoff = None
+    if ttl_hours > 0:
+        cutoff = datetime.now(timezone.utc) - timedelta(hours=ttl_hours)
+    for username, last_scraped in members:
+        if cutoff and last_scraped and last_scraped >= cutoff:
+            skipped.append(username)
+            continue
+        usernames.append(username)
+    if skipped:
+        preview = ", ".join(skipped[:5])
+        extra = f" (+{len(skipped) - 5} more)" if len(skipped) > 5 else ""
+        console.print(
+            f"[yellow]Skipping[/yellow] {len(skipped)} recently scraped user(s) "
+            f"(last < {ttl_hours}h): {preview}{extra}"
+        )
+    if not usernames:
+        if total_members:
+            console.print(
+                f"[green]Cohort[/green] {cohort_id}: all {total_members} members were scraped < {ttl_hours}h ago."
+            )
+        else:
+            console.print(f"[yellow]Cohort[/yellow] {cohort_id} has no members to scrape.")
+        return
     run_id = None
     with get_session(settings) as session:
         run_id = telemetry_service.record_scrape_run(
