@@ -60,15 +60,13 @@ def _scrape_user_ratings(
     incremental: bool = False,
 ) -> tuple[int, Set[int]]:
     """Fetch ratings + likes for a single user and persist them."""
-    snapshot: Optional[dict[str, Optional[float]]] = None
-    if incremental:
-        with get_session(settings) as session:
-            snapshot = rating_service.get_user_rating_snapshot(session, username)
+    with get_session(settings) as session:
+        snapshot = rating_service.get_user_rating_snapshot(session, username)
     scraper = ProfileRatingsScraper(settings)
     try:
         ratings: list[FilmRating] = []
         for payload in scraper.fetch_user_ratings(username):
-            if incremental and rating_service.rating_matches_snapshot(snapshot, payload):
+            if rating_service.rating_matches_snapshot(snapshot, payload):
                 break
             ratings.append(payload)
         rated_slugs = {item.film_slug for item in ratings}
@@ -76,7 +74,7 @@ def _scrape_user_ratings(
         for payload in scraper.fetch_user_liked_films(username):
             if payload.film_slug in rated_slugs:
                 continue
-            if incremental and rating_service.rating_matches_snapshot(snapshot, payload):
+            if rating_service.rating_matches_snapshot(snapshot, payload):
                 break
             likes.append(payload)
     finally:
