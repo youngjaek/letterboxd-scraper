@@ -14,7 +14,7 @@ This document captures the current vision, architectural direction, and phased r
 Deliver a “Cohort Almanac” experience where any Letterboxd user can:
 
 1. Define a cohort (followers, critics, list members) without touching CLI commands.
-2. Keep that cohort’s ratings/likes synchronized via full scrapes plus incremental rated-date deltas that stop once the scraped `(user_id, film_id, rating)` triple already exists in the DB.
+2. Keep that cohort’s ratings/likes synchronized via rated-date scrapes that stop once the scraped `(user_id, film_id, rating)` triple already exists in the DB (the same flow powers both “full” and “incremental” runs; the difference is purely operational intent/logging).
 3. Explore ready-made insights: top-ranked films, hidden gems, divergence from global averages, favourites/likes, temporal slices, director/genre filters, etc.
 4. Share or export curated lists (CSV, shareable links, Letterboxd list templates) powered by their trusted circle instead of the global crowd.
 
@@ -25,7 +25,7 @@ Scraping remains an internal implementation detail; end users interact with a UI
 We graduate each phase only when the platform meets these measurable targets:
 
 - **Data completeness:** ≥99% of tiles per scrape include rating, like/favourite flags, and TMDB IDs (remaining outliers land in a tracked “needs enrichment” queue).
-- **Freshness:** Full-cohort rebuild (≤100 members, 30–40k films) completes within 30 minutes end-to-end; incremental rated-date scrapes persist to the DB within 5 minutes for 95% of deltas.
+- **Freshness:** Rated-date scrapes (regardless of entry point) persist new deltas within 5 minutes for 95% of runs, and a cohort rebuild of ≤100 members (30–40k films) completes within 30 minutes end-to-end.
 - **Data integrity:** Zero duplicate `(user_id, film_id)` rows post-run; histogram totals reconcile with ratings within ±1% or the pipeline fails fast.
 - **Pipeline reliability:** Scrape → enrichment → stats workflow succeeds ≥98% over a rolling 7-day window with automatic retries capped at 3 per job.
 - **API latency:** Cached cohort-stats endpoints return <750 ms at p95, uncached heavy queries <3 s at p95 while serving ≥10 concurrent cohorts.
@@ -54,6 +54,7 @@ We graduate each phase only when the platform meets these measurable targets:
 - **Metadata persistence:** Update `services.ratings.get_or_create_film` to store title, release year, TMDB ID, poster URL, runtime, directors, and other TMDB-derived fields. Add a background job that enriches any newly seen slug.
 - **Incremental rated-date ingest:** When scraping `/by/rated-date/`, walk tiles newest-to-oldest, upsert if the rating changed, and halt once the scraped `(user_id, film_id, rating)` triple already matches what’s stored. Persist the latest `liked/favorite` flags during the same pass so the DB stays aligned with re-rates that bubble to the top.
 - **Likes/favourites:** Add `liked` and `favorite` boolean columns to `ratings` (or a separate `user_reactions` table) so per-film like counts and favourite percentages can be aggregated.
+- **Likes sweeps:** Incremental likes scraping reuses the same stop condition, but schedule periodic deep sweeps (weekly/monthly) to catch rare like removals or re-likes that fall past the stop marker.
 - **Rating distributions:** When scraping `/film/{slug}/json/` or the CSI histogram, persist counts per rating bucket per cohort (could be a JSON field or a dedicated `film_histograms` table). This differentiates films with the same average but different consensus profiles.
 - **Throttling & compliance:** Maintain the `ThrottledClient`, add jitter/backoff, and document polite crawling best practices (delay, user-agent, cap on frequency) to avoid stressing Letterboxd.
 - **Parallelization:** Move scraping into a queue + worker pool (Celery/RQ/APS) so user pages, film pages, and TMDB enrichment can run concurrently while still honoring per-domain rate caps.
@@ -126,7 +127,7 @@ Materialized view `cohort_film_stats` will be extended to include:
 
 Key ideas:
 
-- The existing CLI workflows become job handlers invoked by the scheduler or API triggers. Each handler reuses current services (`cohort refresh`, `scrape full/incremental`, `stats refresh`, `rank compute`, `rank buckets`).
+- The existing CLI workflows become job handlers invoked by the scheduler or API triggers. Each handler reuses current services (`cohort refresh`, `scrape full`, `scrape incremental`, `stats refresh`, `rank compute`, `rank buckets`), but note that full/incremental share the same rated-date stop logic and primarily differ in intent/telemetry. 
 - A metadata enrichment worker runs after scrapes to fetch TMDB data and rating histograms for any new films.
 - The web/API layer reads from `film_rankings`, `ranking_insights`, and `cohort_film_stats` to render dashboards (top films, hidden gems, divergences, filters).
 - Provide a self-hosted bundle (Docker compose) for power users plus a hosted multi-tenant deployment for the general audience.
@@ -168,9 +169,9 @@ Prebuilt slices:
 ### Phase 2 — Pipeline Automation
 
 1. Build a job runner (Celery/RQ/APS) that chains existing CLI steps:
-   - `cohort refresh` → `scrape full` (or incremental) → `stats refresh` → `rank compute` → `rank buckets`.
+   - `cohort refresh` → `scrape full`/`scrape incremental` (same scraper, different intent) → `stats refresh` → `rank compute` → `rank buckets`.
 2. Implement telemetry/monitoring using `services.telemetry` outputs; add dashboards/log shipping plus SLO alerts on latency/failure rate.
-3. Schedule rated-date incremental updates plus periodic metadata enrichment with worker pools respecting tuned concurrency caps.
+3. Schedule rated-date scrapes (full vs incremental just signal intent/telemetry) plus periodic metadata enrichment with worker pools respecting tuned concurrency caps.
 4. Add admin tooling to inspect scrape runs, cohort health, and film sync status; expose replay/backfill buttons per cohort.
 5. Introduce shared caches (Redis/memcached) so frequent stats queries reuse precomputed cohort snapshots instead of recomputing on every request.
 
