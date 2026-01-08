@@ -4,6 +4,7 @@ from collections import Counter
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
+from time import perf_counter
 from typing import Any, Dict, Optional, Set
 
 import typer
@@ -15,18 +16,18 @@ from .db import models
 from .db.session import get_session, init_engine
 from .services import cohorts as cohort_service
 from .services import export as export_service
+from .services import histograms as histogram_service
 from .services import insights as insight_service
 from .services import ratings as rating_service
 from .services import rankings as ranking_service
 from .services import stats as stats_service
 from .services import telemetry as telemetry_service
 from .services.enrichment import enrich_film_metadata, film_needs_enrichment
-from .services import histograms as histogram_service
+from .scrapers.film_pages import FilmPageScraper
 from .scrapers.follow_graph import FollowGraphScraper, expand_follow_graph
+from .scrapers.histograms import RatingsHistogramScraper
 from .scrapers.listings import PosterListingScraper
 from .scrapers.ratings import FilmRating, ProfileRatingsScraper
-from .scrapers.histograms import RatingsHistogramScraper
-from .scrapers.film_pages import FilmPageScraper
 from .services.tmdb import TMDBClient
 
 console = Console()
@@ -411,12 +412,17 @@ def scrape_enrich(
     if include_histograms:
         histogram_scraper = RatingsHistogramScraper(settings)
     processed = 0
+    tmdb_elapsed_total = 0.0
+    histogram_elapsed_total = 0.0
+    tmdb_calls = 0
+    histogram_calls = 0
     try:
         with get_session(settings) as session:
             films = session.query(models.Film).order_by(models.Film.id).all()
             for film in films:
                 touched = False
                 if include_tmdb and tmdb_client and film_needs_enrichment(film):
+                    tmdb_start = perf_counter()
                     try:
                         success = enrich_film_metadata(
                             session,
@@ -425,18 +431,35 @@ def scrape_enrich(
                             film_page_scraper=film_page_scraper,
                         )
                         if success:
-                            console.print(f"[green]TMDB[/green] {film.slug}")
+                            elapsed = perf_counter() - tmdb_start
+                            tmdb_calls += 1
+                            tmdb_elapsed_total += elapsed
+                            console.print(
+                                f"[green]TMDB[/green] {film.slug} ({elapsed:.2f}s)"
+                            )
                         touched = touched or success
                     except Exception as exc:  # pragma: no cover - safety log
-                        console.print(f"[red]TMDB failed[/red] {film.slug}: {exc}")
+                        elapsed = perf_counter() - tmdb_start
+                        console.print(
+                            f"[red]TMDB failed[/red] {film.slug} ({elapsed:.2f}s): {exc}"
+                        )
                 if include_histograms and histogram_scraper and histogram_service.film_needs_histogram(film):
+                    histogram_start = perf_counter()
                     try:
                         summary = histogram_scraper.fetch(film.slug)
                         histogram_service.upsert_global_histogram(session, film, summary)
-                        console.print(f"[cyan]Histogram[/cyan] {film.slug}")
+                        elapsed = perf_counter() - histogram_start
+                        histogram_calls += 1
+                        histogram_elapsed_total += elapsed
+                        console.print(
+                            f"[cyan]Histogram[/cyan] {film.slug} ({elapsed:.2f}s)"
+                        )
                         touched = True
                     except Exception as exc:  # pragma: no cover
-                        console.print(f"[red]Histogram failed[/red] {film.slug}: {exc}")
+                        elapsed = perf_counter() - histogram_start
+                        console.print(
+                            f"[red]Histogram failed[/red] {film.slug} ({elapsed:.2f}s): {exc}"
+                        )
                 if touched:
                     processed += 1
                     session.flush()
@@ -450,6 +473,18 @@ def scrape_enrich(
         if histogram_scraper:
             histogram_scraper.close()
     console.print(f"[green]Enrichment complete[/green]; processed {processed} films.")
+    if tmdb_calls:
+        avg_tmdb = tmdb_elapsed_total / tmdb_calls
+        console.print(
+            f"[blue]TMDB avg[/blue]: {avg_tmdb:.2f}s across {tmdb_calls} film(s). "
+            f"Est. per-100: {avg_tmdb * 100:.1f}s (~{avg_tmdb * 100 / 60:.1f} min)."
+        )
+    if histogram_calls:
+        avg_hist = histogram_elapsed_total / histogram_calls
+        console.print(
+            f"[magenta]Histogram avg[/magenta]: {avg_hist:.2f}s across {histogram_calls} film(s). "
+            f"Est. per-100: {avg_hist * 100:.1f}s (~{avg_hist * 100 / 60:.1f} min)."
+        )
 
 
 @rank_app.command("compute")
