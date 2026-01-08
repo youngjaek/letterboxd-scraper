@@ -24,7 +24,7 @@ config/
 1. **Cohort definition**: given a seed user and depth rules, the follow graph scraper populates `cohort_members`.
 2. **Full scrape (phase 1)**: parallel worker pool crawls each member’s `/films/rated/.5-5/` pages plus `/likes/films/rated/none/`, inserting/updating the normalized `ratings` table. Release year is captured directly from the poster tiles and likes with no rating are stored as `rating=NULL, liked=TRUE`.
 3. **Enrichment pass (phase 2)**: opt-in command fetches TMDB metadata (IDs, runtime, directors, posters) and Letterboxd histogram stats from `/csi/film/{slug}/ratings-summary/` for films touched in phase 1, storing aggregate stats on `films` and `film_histograms`.
-4. **Incremental loop**: RSS watcher polls members’ feeds for new/updated ratings or diary entries and patches rows in `ratings`; run `scrape enrich` afterward if new films were introduced (or target a single slug via `scrape enrich --slug <film>` when only one title needs a fresh TMDB/metadata pass).
+4. **Incremental loop**: RSS watcher polls members’ feeds for new/updated ratings or diary entries and patches rows in `ratings`; run `scrape enrich` afterward if new films were introduced.
 5. **Aggregation refresh**: scheduled job recalculates cohort-level stats and derived rankings (materialized views).
 6. **Exports/UI**: CLI commands read aggregates to generate CSVs, dashboards, or API responses.
 

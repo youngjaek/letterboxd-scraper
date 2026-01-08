@@ -226,6 +226,11 @@ def scrape_full(
     ctx: typer.Context,
     cohort_id: int = typer.Argument(..., help="Cohort identifier."),
     resume: bool = typer.Option(False, "--resume/--no-resume", help="Resume from last checkpoint."),
+    user: Optional[str] = typer.Option(
+        None,
+        "--user",
+        help="Restrict scraping to a single cohort member (Letterboxd username).",
+    ),
 ) -> None:
     """Run a full historical scrape for every user in the cohort."""
     settings = get_state(ctx)["settings"]
@@ -236,10 +241,21 @@ def scrape_full(
             typer.echo(f"Cohort {cohort_id} not found.")
             raise typer.Exit(code=1)
         members = cohort_service.list_member_scrape_freshness(session, cohort_id)
+    if user:
+        normalized = user.strip().lower()
+        filtered = [
+            (username, last_scraped)
+            for username, last_scraped in members
+            if username.lower() == normalized
+        ]
+        if not filtered:
+            typer.echo(f"User '{user}' is not a member of cohort {cohort_id}.")
+            raise typer.Exit(code=1)
+        members = filtered
     total_members = len(members)
     ttl_hours = max(0, getattr(settings.scraper, "full_scrape_ttl_hours", 0))
     cutoff = None
-    if ttl_hours > 0:
+    if ttl_hours > 0 and not user:
         cutoff = datetime.now(timezone.utc) - timedelta(hours=ttl_hours)
     for username, last_scraped in members:
         if cutoff and last_scraped and last_scraped >= cutoff:
@@ -316,6 +332,11 @@ def scrape_full(
 def scrape_incremental(
     ctx: typer.Context,
     cohort_id: int = typer.Argument(..., help="Cohort identifier."),
+    user: Optional[str] = typer.Option(
+        None,
+        "--user",
+        help="Restrict incremental scraping to a single cohort member (Letterboxd username).",
+    ),
 ) -> None:
     """Apply incremental updates via rated-date scraping."""
     settings = get_state(ctx)["settings"]
@@ -325,6 +346,13 @@ def scrape_incremental(
             typer.echo(f"Cohort {cohort_id} not found.")
             raise typer.Exit(code=1)
         usernames = cohort_service.list_member_usernames(session, cohort_id)
+    if user:
+        normalized = user.strip().lower()
+        filtered = [name for name in usernames if name.lower() == normalized]
+        if not filtered:
+            typer.echo(f"User '{user}' is not a member of cohort {cohort_id}.")
+            raise typer.Exit(code=1)
+        usernames = filtered
     if not usernames:
         console.print(f"[yellow]Cohort[/yellow] {cohort_id} has no members to scrape.")
         return
