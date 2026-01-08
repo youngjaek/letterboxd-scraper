@@ -20,8 +20,9 @@ class TMDBPersonCredit:
 
 
 @dataclass
-class TMDBMoviePayload:
+class TMDBMediaPayload:
     tmdb_id: int
+    media_type: str
     imdb_id: Optional[str]
     title: str
     original_title: Optional[str]
@@ -54,12 +55,12 @@ class TMDBClient:
         self._cache_ttl = cache_ttl_seconds
         self._cache: Dict[str, Tuple[float, Dict[str, Any]]] = {}
 
-    def fetch_movie(self, tmdb_id: int) -> TMDBMoviePayload:
-        data = self._request_json(f"/movie/{tmdb_id}")
-        return self._parse_movie_payload(tmdb_id, data)
+    def fetch_movie(self, tmdb_id: int) -> TMDBMediaPayload:
+        return self._fetch_media_payload(tmdb_id, media_type="movie")
 
-    def fetch_credits(self, tmdb_id: int) -> List[TMDBPersonCredit]:
-        data = self._request_json(f"/movie/{tmdb_id}/credits")
+    def fetch_credits(self, tmdb_id: int, media_type: str = "movie") -> List[TMDBPersonCredit]:
+        path = "/tv/{}/credits" if media_type == "tv" else "/movie/{}/credits"
+        data = self._request_json(path.format(tmdb_id))
         credits: List[TMDBPersonCredit] = []
         for crew in data.get("crew", []):
             credits.append(
@@ -73,10 +74,14 @@ class TMDBClient:
             )
         return credits
 
-    def fetch_movie_with_credits(
-        self, tmdb_id: int
-    ) -> Tuple[TMDBMoviePayload, List[TMDBPersonCredit]]:
-        return self.fetch_movie(tmdb_id), self.fetch_credits(tmdb_id)
+    def fetch_media_with_credits(
+        self,
+        tmdb_id: int,
+        media_type: str = "movie",
+    ) -> Tuple[TMDBMediaPayload, List[TMDBPersonCredit]]:
+        payload = self._fetch_media_payload(tmdb_id, media_type=media_type)
+        credits = self.fetch_credits(tmdb_id, media_type=media_type)
+        return payload, credits
 
     def close(self) -> None:
         self._client.close()
@@ -98,27 +103,55 @@ class TMDBClient:
         self._cache[cache_key] = (time.time(), data)
         return data
 
-    def _parse_movie_payload(self, tmdb_id: int, data: Dict[str, Any]) -> TMDBMoviePayload:
+    def _fetch_media_payload(self, tmdb_id: int, media_type: str) -> TMDBMediaPayload:
+        if media_type == "tv":
+            data = self._request_json(f"/tv/{tmdb_id}")
+        else:
+            data = self._request_json(f"/movie/{tmdb_id}")
+        return self._parse_media_payload(tmdb_id, data, media_type)
+
+    def _parse_media_payload(
+        self, tmdb_id: int, data: Dict[str, Any], media_type: str
+    ) -> TMDBMediaPayload:
+        release_date_value = (
+            data.get("first_air_date") if media_type == "tv" else data.get("release_date")
+        )
         release_date = None
-        if data.get("release_date"):
+        if release_date_value:
             try:
-                release_date = date.fromisoformat(data["release_date"])
+                release_date = date.fromisoformat(release_date_value)
             except ValueError:
                 release_date = None
         poster_path = data.get("poster_path")
         poster_url = f"{self.image_base_url}{poster_path}" if poster_path else None
-        return TMDBMoviePayload(
+        if media_type == "tv":
+            title = data.get("name") or data.get("original_name") or ""
+            original_title = data.get("original_name")
+            runtime_field = data.get("episode_run_time") or []
+            runtime_minutes = runtime_field[0] if runtime_field else None
+            origin_countries = data.get("production_countries") or [
+                {"iso_3166_1": code} for code in data.get("origin_country", [])
+            ]
+            imdb_id = None
+        else:
+            title = data.get("title") or data.get("original_title") or ""
+            original_title = data.get("original_title")
+            runtime_minutes = data.get("runtime")
+            origin_countries = data.get("production_countries") or []
+            imdb_id = data.get("imdb_id")
+        return TMDBMediaPayload(
             tmdb_id=tmdb_id,
-            imdb_id=data.get("imdb_id"),
-            title=data.get("title") or data.get("original_title") or "",
-            original_title=data.get("original_title"),
-            runtime_minutes=data.get("runtime"),
+            media_type=media_type,
+            imdb_id=imdb_id,
+            title=title,
+            original_title=original_title,
+            runtime_minutes=runtime_minutes,
             release_date=release_date,
             overview=data.get("overview"),
             poster_url=poster_url,
             genres=data.get("genres") or [],
-            origin_countries=data.get("production_countries") or [],
-            raw=data,
+            origin_countries=origin_countries,
+            raw=dict(data),
         )
 
     @staticmethod

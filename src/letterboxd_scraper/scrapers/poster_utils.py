@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import re
 from typing import List, Optional, Sequence
+from urllib.parse import urlparse
 
 from bs4 import BeautifulSoup, FeatureNotFound
 from bs4.element import Tag
@@ -102,11 +103,13 @@ def slug_from_link(link: Optional[str]) -> Optional[str]:
     link = link.strip()
     if not link:
         return None
-    link = link.split("?")[0].strip("/")
-    parts = link.split("/")
+    parsed = urlparse(link)
+    path = parsed.path if parsed.scheme else link
+    path = path.split("?")[0].strip("/")
+    parts = path.split("/")
     if not parts:
         return None
-    if parts[0] == "film" and len(parts) >= 2:
+    if parts[0] in {"film", "director"} and len(parts) >= 2:
         return parts[1]
     return None
 

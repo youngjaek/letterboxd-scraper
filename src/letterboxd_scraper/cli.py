@@ -24,6 +24,7 @@ from .services import stats as stats_service
 from .services import telemetry as telemetry_service
 from .services.enrichment import enrich_film_metadata, film_needs_enrichment
 from .scrapers.film_pages import FilmPageScraper
+from .scrapers.person_pages import PersonPageScraper
 from .scrapers.follow_graph import FollowGraphScraper, expand_follow_graph
 from .scrapers.histograms import RatingsHistogramScraper
 from .scrapers.listings import PosterListingScraper
@@ -405,10 +406,12 @@ def scrape_enrich(
         include_tmdb = False
     tmdb_client = None
     film_page_scraper = None
+    person_page_scraper = None
     histogram_scraper: Optional[RatingsHistogramScraper] = None
     if include_tmdb and settings.tmdb.api_key:
         tmdb_client = TMDBClient(settings)
         film_page_scraper = FilmPageScraper(settings)
+        person_page_scraper = PersonPageScraper(settings)
     if include_histograms:
         histogram_scraper = RatingsHistogramScraper(settings)
     processed = 0
@@ -429,6 +432,7 @@ def scrape_enrich(
                             film,
                             client=tmdb_client,
                             film_page_scraper=film_page_scraper,
+                            person_page_scraper=person_page_scraper,
                         )
                         if success:
                             elapsed = perf_counter() - tmdb_start
@@ -468,6 +472,8 @@ def scrape_enrich(
     finally:
         if film_page_scraper:
             film_page_scraper.close()
+        if person_page_scraper:
+            person_page_scraper.close()
         if tmdb_client:
             tmdb_client.close()
         if histogram_scraper:
