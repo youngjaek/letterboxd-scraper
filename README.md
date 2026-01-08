@@ -42,6 +42,10 @@ The Typer CLI surfaces each workflow step. Commands are grouped by workflow so y
 - `letterboxd-scraper scrape incremental <cohort_id> [--user username]` — RSS-driven updates that upsert new ratings/likes into `ratings` (no enrichment; follow with `scrape enrich` when convenient). `--user` restricts the run to one cohort member.
 - `letterboxd-scraper stats refresh [--concurrent/--no-concurrent]` — rebuild the `cohort_film_stats` materialized view (now only counting rows where `rating IS NOT NULL`).
 
+### User metadata commands
+
+- `letterboxd-scraper user sync-following <username>` — scrape `<username>`'s following list and update stored `users.display_name` / `users.avatar_url` entries for every account they follow, without touching cohorts or ratings.
+
 ### Ranking + export commands
 
 - `letterboxd-scraper rank compute <cohort_id> [--strategy bayesian]` — compute `film_rankings` entries.

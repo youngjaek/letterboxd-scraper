@@ -40,3 +40,37 @@ def test_follow_graph_parses_usernames(tmp_path):
     assert len(results) == 2
     assert results[0].username == "alice"
     assert results[1].username == "bob"
+
+
+def test_follow_graph_parses_display_names_and_avatars():
+    html = read_fixture("following_page_rich.html")
+    settings = make_settings()
+    scraper = FollowGraphScraper(settings)
+    mock_response = Mock(status_code=200, text=html)
+    with patch.object(
+        scraper.client, "get", side_effect=[mock_response, Mock(status_code=200, text="")]
+    ):
+        results = scraper.fetch_following("thebigal")
+    assert results
+    strange = next((r for r in results if r.username == "strangeharbors"), None)
+    assert strange is not None
+    assert strange.display_name == "Jeff Zhang"
+    assert strange.avatar_url.endswith("-0-1000-0-1000-crop.jpg?v=123")
+    jesse = next((r for r in results if r.username == "jesseonplex"), None)
+    assert jesse is not None
+    assert jesse.display_name == "jesseonplex"
+    jesse = next((r for r in results if r.username == "jesseonplex"), None)
+    assert jesse is not None
+    assert jesse.display_name == "jesseonplex"
+
+
+def test_follow_graph_fetches_profile_metadata():
+    html = read_fixture("user_profile.html")
+    settings = make_settings()
+    scraper = FollowGraphScraper(settings)
+    mock_response = Mock(status_code=200, text=html)
+    with patch.object(scraper.client, "get", return_value=mock_response):
+        result = scraper.fetch_profile_metadata("strangeharbors")
+    assert result is not None
+    assert result.display_name == "Jeff Zhang"
+    assert result.avatar_url.endswith("-0-1000-0-1000-crop.jpg?v=6b85f4c57f")

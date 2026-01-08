@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import html as html_lib
 import re
 from typing import List, Optional, Sequence
 from urllib.parse import urlparse
@@ -29,7 +30,8 @@ def parse_html_document(html: str) -> BeautifulSoup:
     line_blocks = soup.select("td.line-content")
     if line_blocks:
         cleaned = "".join(block.get_text() for block in line_blocks)
-        cleaned = re.sub(r"</?span[^>]*>", "", cleaned)
+        cleaned = re.sub(r'</?span[^>]*class="html[^"]*"[^>]*>', "", cleaned)
+        cleaned = html_lib.unescape(cleaned)
         soup = _to_soup(cleaned)
     return soup
 

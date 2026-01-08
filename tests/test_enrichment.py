@@ -341,7 +341,7 @@ def test_film_needs_enrichment_checks_fields():
     film.people = [
         models.FilmPerson(
             film_id=0,
-            person_id=None,
+            person_id=123,
             name="Director Example",
             role="director",
             credit_order=1,

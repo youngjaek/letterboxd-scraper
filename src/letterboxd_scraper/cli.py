@@ -43,12 +43,14 @@ scrape_app = typer.Typer(help="Scraping commands.", no_args_is_help=True)
 stats_app = typer.Typer(help="Statistics/materialized view maintenance.", no_args_is_help=True)
 rank_app = typer.Typer(help="Ranking computations.", no_args_is_help=True)
 export_app = typer.Typer(help="Export data into consumable formats.")
+user_app = typer.Typer(help="User metadata utilities.", no_args_is_help=True)
 
 app.add_typer(cohort_app, name="cohort")
 app.add_typer(scrape_app, name="scrape")
 app.add_typer(stats_app, name="stats")
 app.add_typer(rank_app, name="rank")
 app.add_typer(export_app, name="export")
+app.add_typer(user_app, name="user")
 
 
 def get_state(ctx: typer.Context) -> Dict[str, Settings]:
@@ -861,6 +863,47 @@ def stats_refresh(ctx: typer.Context, concurrent: bool = typer.Option(False, "--
         with get_session(settings) as session:
             stats_service.refresh_cohort_stats(session, concurrently=concurrent)
     console.print("[green]Refreshed[/green] cohort_film_stats view.")
+
+
+@user_app.command("sync-following")
+def user_sync_following(
+    ctx: typer.Context,
+    username: str = typer.Argument(..., help="Letterboxd username whose following list will be scraped."),
+) -> None:
+    """Pull a user's following list and update stored display names/avatars."""
+    settings = get_state(ctx)["settings"]
+    scraper = FollowGraphScraper(settings)
+    console.print(f"[cyan]Fetching[/cyan] @{username}'s following list…")
+    try:
+        profile_meta = scraper.fetch_profile_metadata(username)
+        results = scraper.fetch_following(username)
+    finally:
+        scraper.close()
+    if not results:
+        console.print(f"[yellow]No accounts found[/yellow] for @{username}.")
+        return
+    updated = 0
+    with get_session(settings) as session:
+        for entry in results:
+            cohort_service.get_or_create_user(
+                session,
+                entry.username,
+                entry.display_name,
+                entry.avatar_url,
+            )
+            updated += 1
+        if profile_meta:
+            cohort_service.get_or_create_user(
+                session,
+                profile_meta.username,
+                profile_meta.display_name,
+                profile_meta.avatar_url,
+            )
+            updated += 1
+    console.print(
+        f"[green]Updated[/green] metadata for {updated} user(s) "
+        f"from @{username}'s following list."
+    )
 
 @cohort_app.command("list")
 def cohort_list(ctx: typer.Context) -> None:

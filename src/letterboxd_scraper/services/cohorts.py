@@ -10,14 +10,27 @@ from ..db import models
 from ..scrapers.follow_graph import FollowResult
 
 
-def get_or_create_user(session: Session, username: str, display_name: Optional[str] = None) -> models.User:
+def get_or_create_user(
+    session: Session,
+    username: str,
+    display_name: Optional[str] = None,
+    avatar_url: Optional[str] = None,
+) -> models.User:
     stmt = select(models.User).where(models.User.letterboxd_username == username)
     user = session.scalars(stmt).one_or_none()
+    normalized_display = display_name.strip() if display_name else None
+    normalized_avatar = avatar_url.strip() if avatar_url else None
     if user:
-        if display_name and user.display_name != display_name:
-            user.display_name = display_name
+        if normalized_display and normalized_display != user.display_name:
+            user.display_name = normalized_display
+        if normalized_avatar and normalized_avatar != user.avatar_url:
+            user.avatar_url = normalized_avatar
         return user
-    user = models.User(letterboxd_username=username, display_name=display_name)
+    user = models.User(
+        letterboxd_username=username,
+        display_name=normalized_display,
+        avatar_url=normalized_avatar,
+    )
     session.add(user)
     session.flush()
     return user
@@ -112,5 +125,10 @@ def refresh_cohort_members(
         seed_user = get_or_create_user(session, seed_username)
         add_member(session, cohort, seed_user, depth=0)
     for depth, payload in edges:
-        user = get_or_create_user(session, payload.username, payload.display_name)
+        user = get_or_create_user(
+            session,
+            payload.username,
+            payload.display_name,
+            payload.avatar_url,
+        )
         add_member(session, cohort, user, depth=depth)
