@@ -24,9 +24,24 @@ config/
 1. **Cohort definition**: given a seed user and depth rules, the follow graph scraper populates `cohort_members`.
 2. **Full scrape (phase 1)**: parallel worker pool crawls each member’s `/films/rated/.5-5/` pages plus `/likes/films/rated/none/`, inserting/updating the normalized `ratings` table. Release year is captured directly from the poster tiles and likes with no rating are stored as `rating=NULL, liked=TRUE`.
 3. **Enrichment pass (phase 2)**: opt-in command fetches TMDB metadata (IDs, runtime, directors, posters) and Letterboxd histogram stats from `/csi/film/{slug}/ratings-summary/` for films touched in phase 1, storing aggregate stats on `films` and `film_histograms`.
-4. **Incremental loop**: RSS watcher polls members’ feeds for new/updated ratings or diary entries and patches rows in `ratings`; run `scrape enrich` afterward if new films were introduced.
+4. **Incremental loop**: RSS watcher polls members’ feeds for new/updated ratings or diary entries and patches rows in `ratings`; run `scrape enrich` afterward if new films were introduced (or target a single slug via `scrape enrich --slug <film>` when only one title needs a fresh TMDB/metadata pass).
 5. **Aggregation refresh**: scheduled job recalculates cohort-level stats and derived rankings (materialized views).
 6. **Exports/UI**: CLI commands read aggregates to generate CSVs, dashboards, or API responses.
+
+### Enrichment Workflow
+The enrichment CLI is intentionally separate from the full scrape so we can rerun it quickly or only for films that changed. The current algorithm:
+
+1. **TMDB ID discovery:**
+   - Load the Letterboxd film page (`/film/{slug}/`) and prefer the explicit TMDB button (`https://www.themoviedb.org/{movie|tv}/{id}`) for both ID and media type (movie vs TV). If no button exists, fall back to the `data-tmdb-id` attribute on `<body>`.
+   - Capture fallback metadata from the page while we’re there (poster URL, overview, runtime from the “### mins” footer, release year, genres, and the full list of directors including their `/director/{slug}/` link).
+2. **TMDB fetch:**
+   - Call `/movie/{id}` + `/movie/{id}/credits` for films or `/tv/{id}` + `/tv/{id}/credits` for miniseries. The payload fills in title, release date, runtime (movies only), poster, overview, origin countries, and structured genres. Credits provide director TMDB person IDs when available.
+   - If TMDB returns a 404 or omits a field, reuse the page-level fallback (poster, overview, runtime, genres, release year, director list) so we still have the metadata.
+3. **Director/person IDs:**
+   - For each director name TMDB gives us, write `film_people` rows directly.
+   - If TMDB omits the person ID, look up the director’s `/director/{slug}/` page (or reuse the `data-tmdb-id` on that page) to resolve the TMDB person ID before inserting `film_people`.
+4. **Histograms:** when `--histograms` is enabled, fetch `/csi/film/{slug}/ratings-summary/`, store per-bucket counts in `film_histograms`, and update `letterboxd_rating_count` / `letterboxd_fan_count`.
+5. **“Needs enrichment” predicate:** we rerun enrichment for any film missing a TMDB ID, poster, overview, release year, or director with a TMDB person ID. This ensures previously scraped films can be revisited if their metadata is incomplete or a director slug didn’t resolve on the first pass.
 
 ## Database Model (PostgreSQL or SQLite)
 

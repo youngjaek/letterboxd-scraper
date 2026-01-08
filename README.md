@@ -38,7 +38,7 @@ The Typer CLI surfaces each workflow step. Commands are grouped by workflow so y
 ### Scraping + stats commands
 
 - `letterboxd-scraper scrape full <cohort_id>` — parallel worker pool that fetches each member’s `/films/rated/.5-5/` pages **and** `/likes/films/rated/none/`, storing ratings plus unrated likes. This phase is intentionally lightweight (no TMDB or histogram calls) so hundreds of users can be scraped quickly.
-- `letterboxd-scraper scrape enrich [--tmdb/--no-tmdb] [--histograms/--no-histograms] [--limit N]` — second pass that hydrates touched films with TMDB metadata (IDs, runtime, poster, directors) and Letterboxd histogram stats from `/csi/film/{slug}/ratings-summary/`.
+- `letterboxd-scraper scrape enrich [--tmdb/--no-tmdb] [--histograms/--no-histograms] [--limit N] [--slug film-slug]` — second pass that hydrates touched films with TMDB metadata (IDs, runtime, poster, directors) and Letterboxd histogram stats from `/csi/film/{slug}/ratings-summary/`. Use `--slug` when only one film needs an enrichment retry.
 - `letterboxd-scraper scrape incremental <cohort_id>` — RSS-driven updates that upsert new ratings/likes into `ratings` (no enrichment; follow with `scrape enrich` when convenient).
 - `letterboxd-scraper stats refresh [--concurrent/--no-concurrent]` — rebuild the `cohort_film_stats` materialized view (now only counting rows where `rating IS NOT NULL`).
 

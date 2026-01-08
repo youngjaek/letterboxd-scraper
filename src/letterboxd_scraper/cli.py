@@ -391,6 +391,9 @@ def scrape_incremental(
 def scrape_enrich(
     ctx: typer.Context,
     limit: Optional[int] = typer.Option(None, "--limit", help="Maximum films to enrich."),
+    slug: Optional[str] = typer.Option(
+        None, "--slug", help="Restrict enrichment to a single film slug."
+    ),
     include_tmdb: bool = typer.Option(True, "--tmdb/--no-tmdb", help="Pull metadata from TMDB."),
     include_histograms: bool = typer.Option(
         True, "--histograms/--no-histograms", help="Refresh Letterboxd histogram stats."
@@ -421,10 +424,19 @@ def scrape_enrich(
     histogram_calls = 0
     try:
         with get_session(settings) as session:
-            films = session.query(models.Film).order_by(models.Film.id).all()
+            if slug:
+                film = session.query(models.Film).filter(models.Film.slug == slug).one_or_none()
+                if not film:
+                    console.print(f"[red]Film '{slug}' not found.[/red]")
+                    raise typer.Exit(code=1)
+                films = [film]
+            else:
+                films = session.query(models.Film).order_by(models.Film.id).all()
             for film in films:
                 touched = False
-                if include_tmdb and tmdb_client and film_needs_enrichment(film):
+                force_enrich = bool(slug)
+                run_tmdb = include_tmdb and tmdb_client and (force_enrich or film_needs_enrichment(film))
+                if run_tmdb:
                     tmdb_start = perf_counter()
                     try:
                         success = enrich_film_metadata(
