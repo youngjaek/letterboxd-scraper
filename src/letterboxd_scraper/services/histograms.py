@@ -31,8 +31,14 @@ def upsert_global_histogram(
         )
     if summary.rating_count is not None:
         film.letterboxd_rating_count = summary.rating_count
+    else:
+        # Either the film has too few ratings or the endpoint failed to provide a count;
+        # treat it as zero so we don't keep re-fetching it indefinitely.
+        film.letterboxd_rating_count = 0
     if summary.fan_count is not None:
         film.letterboxd_fan_count = summary.fan_count
+    else:
+        film.letterboxd_fan_count = 0
     if summary.weighted_average is not None:
         film.letterboxd_weighted_average = summary.weighted_average
 
