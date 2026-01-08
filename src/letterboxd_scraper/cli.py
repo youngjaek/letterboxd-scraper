@@ -869,6 +869,11 @@ def stats_refresh(ctx: typer.Context, concurrent: bool = typer.Option(False, "--
 def user_sync_following(
     ctx: typer.Context,
     username: str = typer.Argument(..., help="Letterboxd username whose following list will be scraped."),
+    print_only: bool = typer.Option(
+        False,
+        "--print-only",
+        help="Preview fetched metadata instead of persisting it.",
+    ),
 ) -> None:
     """Pull a user's following list and update stored display names/avatars."""
     settings = get_state(ctx)["settings"]
@@ -881,6 +886,21 @@ def user_sync_following(
         scraper.close()
     if not results:
         console.print(f"[yellow]No accounts found[/yellow] for @{username}.")
+        return
+    if print_only:
+        console.print("[magenta]Previewing fetched metadata (no DB writes):[/magenta]")
+        for entry in results:
+            console.print(
+                f" @{entry.username:<20} "
+                f"name={entry.display_name!r} "
+                f"avatar={entry.avatar_url or ''}"
+            )
+        if profile_meta:
+            console.print(
+                f" [green](seed)[/green] @{profile_meta.username:<20} "
+                f"name={profile_meta.display_name!r} "
+                f"avatar={profile_meta.avatar_url or ''}"
+            )
         return
     updated = 0
     with get_session(settings) as session:

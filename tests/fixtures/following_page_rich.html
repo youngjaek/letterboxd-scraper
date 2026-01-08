@@ -1,16 +1,52 @@
 <html>
   <body>
-    <div class="follow-button-wrapper" data-username="strangeharbors" data-name="">
-      <div class="avatar">
-        <img data-src="https://a.ltrbxd.com/resized/avatar/twitter/example-0-80-0-80-crop.jpg?v=123" />
-      </div>
-      <a class="button -following" title="Unfollow Jeff Zhang">Following strangeharbors</a>
-    </div>
-    <div class="follow-button-wrapper" data-username="jesseonplex" data-name="jesseonplex">
-      <div class="avatar">
-        <img src="https://a.ltrbxd.com/resized/avatar/upload/placeholder-0-80-0-80-crop.jpg?v=456" />
-      </div>
-      <a class="button -following" title="Unfollow jesseonplex">Following jesseonplex</a>
-    </div>
+    <table class="person-table">
+      <tr>
+        <td class="col-member">
+          <div class="person-summary" data-given-name="Jeff" data-family-name="Zhang">
+            <a class="avatar -a40" href="/strangeharbors/">
+              <span
+                class="image"
+                style="background-image: url('//a.ltrbxd.com/resized/avatar/twitter/example-0-80-0-80-crop.jpg?v=123');"
+              ></span>
+            </a>
+            <h3 class="title-3">
+              <a href="/strangeharbors/" class="name">
+                <span class="given-name">Jeff</span>
+                <span class="family-name">Zhang</span>
+              </a>
+            </h3>
+          </div>
+        </td>
+        <td class="col-follow">
+          <div
+            class="follow-button-wrapper"
+            data-username="strangeharbors"
+            data-name="Jeff"
+            data-given-name="Jeff"
+            data-family-name="Zhang"
+          >
+            <a class="button -following" title="Unfollow Jeff Zhang">Following strangeharbors</a>
+          </div>
+        </td>
+      </tr>
+      <tr>
+        <td class="col-member">
+          <div class="person-summary">
+            <a class="avatar -a40" href="/jesseonplex/">
+              <img
+                data-srcset="https://a.ltrbxd.com/resized/avatar/upload/placeholder-0-80-0-80-crop.jpg?v=456 2x, https://a.ltrbxd.com/resized/avatar/upload/placeholder-0-120-0-120-crop.jpg?v=456 3x"
+              />
+            </a>
+            <h3 class="title-3"><a href="/jesseonplex/" class="name">@jesseonplex</a></h3>
+          </div>
+        </td>
+        <td class="col-follow">
+          <div class="follow-button-wrapper" data-username="jesseonplex" data-name="jesseonplex">
+            <a class="button -following" title="Follow jesseonplex">Following jesseonplex</a>
+          </div>
+        </td>
+      </tr>
+    </table>
   </body>
 </html>

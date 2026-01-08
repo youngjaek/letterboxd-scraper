@@ -56,12 +56,11 @@ def test_follow_graph_parses_display_names_and_avatars():
     assert strange is not None
     assert strange.display_name == "Jeff Zhang"
     assert strange.avatar_url.endswith("-0-1000-0-1000-crop.jpg?v=123")
+    assert strange.avatar_url.startswith("//a.ltrbxd.com")
     jesse = next((r for r in results if r.username == "jesseonplex"), None)
     assert jesse is not None
     assert jesse.display_name == "jesseonplex"
-    jesse = next((r for r in results if r.username == "jesseonplex"), None)
-    assert jesse is not None
-    assert jesse.display_name == "jesseonplex"
+    assert jesse.avatar_url.endswith("-0-1000-0-1000-crop.jpg?v=456")
 
 
 def test_follow_graph_fetches_profile_metadata():

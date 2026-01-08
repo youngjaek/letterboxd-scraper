@@ -46,35 +46,14 @@ class FollowGraphScraper:
                     username_value = slug or ""
                 if not username_value:
                     continue
-                display_name = (person.get("data-name") or "").strip()
-                if not display_name:
-                    name_node = person.select_one(".name") or person.select_one(".real-name")
-                    if name_node:
-                        display_name = name_node.get_text(strip=True)
-                if not display_name:
-                    title_node = person.select_one("a.button")
-                    fallback_title = None
-                    if title_node:
-                        fallback_title = title_node.get("data-original-title") or title_node.get("title")
-                    title = fallback_title or person.get("data-original-title") or person.get("title") or ""
-                    for token in ("Follow", "Unfollow"):
-                        if token in title:
-                            display_name = (
-                                title.split(token, 1)[1].split("|", 1)[0].strip().strip('"')
-                            )
-                            break
-                if not display_name:
-                    display_name = username_value
-                avatar_url = _normalize_avatar_url(person.get("data-avatar"))
-                if not avatar_url:
-                    avatar = person.select_one("img")
-                    if avatar:
-                        raw_avatar = (
-                            avatar.get("data-src")
-                            or avatar.get("data-fallback")
-                            or avatar.get("src")
-                        )
-                        avatar_url = _normalize_avatar_url(raw_avatar)
+                summary_node = None
+                row = person.find_parent("tr")
+                if row:
+                    summary_node = row.select_one(".person-summary") or row
+                if not summary_node:
+                    summary_node = person.find_previous("div", class_="person-summary")
+                display_name = _extract_display_name(person, username_value, summary_node)
+                avatar_url = _extract_avatar_url(person, summary_node)
                 results.append(
                     FollowResult(
                         username=username_value,
@@ -127,6 +106,15 @@ def _normalize_avatar_url(url: Optional[str]) -> Optional[str]:
     return re.sub(r"-0-\d+-0-\d+-crop", "-0-1000-0-1000-crop", url)
 
 
+def _first_srcset_url(value: Optional[str]) -> Optional[str]:
+    if not value:
+        return None
+    first = value.split(",", 1)[0].strip()
+    if not first:
+        return None
+    return first.split(" ", 1)[0]
+
+
 def _extract_profile_display_name(soup: BeautifulSoup) -> Optional[str]:
     meta = soup.find("meta", attrs={"property": "og:title"})
     if meta and meta.get("content"):
@@ -152,3 +140,130 @@ def _extract_profile_avatar(soup: BeautifulSoup) -> Optional[str]:
     if img:
         return img.get("src")
     return None
+
+
+def _extract_avatar_url(person: BeautifulSoup, context: Optional[BeautifulSoup] = None) -> Optional[str]:
+    avatar_url = _normalize_avatar_url(person.get("data-avatar"))
+    if avatar_url:
+        return avatar_url
+
+    def extract_raw(node: BeautifulSoup) -> Optional[str]:
+        raw_avatar = (
+            node.get("data-avatar")
+            or node.get("data-image")
+            or node.get("data-src")
+            or node.get("data-fallback")
+            or node.get("src")
+            or _first_srcset_url(node.get("data-srcset"))
+            or _first_srcset_url(node.get("srcset"))
+        )
+        if raw_avatar:
+            return raw_avatar
+        style = node.get("style")
+        if style:
+            match = re.search(r"url\(['\"]?(?P<url>[^'\"\)]+)", style)
+            if match:
+                return match.group("url")
+        return None
+
+    search_nodes: List[BeautifulSoup] = []
+    if context:
+        search_nodes.append(context)
+        search_nodes.extend(context.select("[class], [style], img"))
+    search_nodes.append(person)
+    search_nodes.extend(person.select(".avatar"))
+    search_nodes.extend(person.select("img"))
+    search_nodes.extend(
+        person.select(
+            "[data-avatar], [data-image], [data-src], [data-fallback], [data-srcset], [srcset], [style]"
+        )
+    )
+    seen_ids: set[int] = set()
+    for node in search_nodes:
+        if id(node) in seen_ids:
+            continue
+        seen_ids.add(id(node))
+        raw_avatar = extract_raw(node)
+        if raw_avatar:
+            normalized = _normalize_avatar_url(raw_avatar)
+            if normalized:
+                return normalized
+    return None
+
+
+def _extract_display_name(
+    person: BeautifulSoup,
+    username: str,
+    context: Optional[BeautifulSoup] = None,
+) -> str:
+    candidates: List[tuple[int, str]] = []
+
+    def normalize(value: Optional[str]) -> Optional[str]:
+        if not value:
+            return None
+        return value.replace("\xa0", " ").strip().strip('"')
+
+    def add_candidate(value: Optional[str], priority: int) -> None:
+        normalized = normalize(value)
+        if normalized:
+            candidates.append((priority, normalized))
+
+    def combine_parts(values: Iterable[Optional[str]]) -> Optional[str]:
+        normalized_parts: List[str] = []
+        for value in values:
+            normalized = normalize(value)
+            if normalized:
+                normalized_parts.append(normalized)
+        if normalized_parts:
+            return " ".join(normalized_parts)
+        return None
+
+    def add_node_candidates(node: BeautifulSoup, base_priority: int) -> None:
+        add_candidate(
+            combine_parts(
+                [
+                    node.get("data-given-name"),
+                    node.get("data-family-name"),
+                ]
+            ),
+            base_priority,
+        )
+        given_nodes = [child.get_text(" ", strip=True) for child in node.select(".given-name")]
+        family_nodes = [child.get_text(" ", strip=True) for child in node.select(".family-name")]
+        combined_dom = combine_parts([*given_nodes, *family_nodes])
+        if combined_dom:
+            add_candidate(combined_dom, base_priority)
+        for real_node in node.select(".real-name"):
+            add_candidate(real_node.get_text(" ", strip=True), base_priority)
+        for name_node in node.select(".name"):
+            add_candidate(name_node.get_text(" ", strip=True), base_priority + 1)
+        for img in node.select("img[alt]"):
+            add_candidate(img.get("alt"), base_priority)
+
+    if context:
+        add_node_candidates(context, 0)
+    add_node_candidates(person, 2)
+    add_candidate(person.get("data-name"), 3)
+    title_node = person.select_one("a.button")
+    fallback_title = None
+    if title_node:
+        fallback_title = title_node.get("data-original-title") or title_node.get("title")
+    title = fallback_title or person.get("data-original-title") or person.get("title") or ""
+    for token in ("Follow", "Unfollow"):
+        if token in title:
+            add_candidate(title.split(token, 1)[1].split("|", 1)[0], 1)
+            break
+
+    def _matches_username(value: str) -> bool:
+        normalized = value.lstrip("@").lower()
+        return normalized == username.lower()
+
+    filtered = [cand for cand in candidates if not _matches_username(cand[1])]
+    pool = filtered or candidates
+    if not pool:
+        return username
+    best_priority, best_value = pool[0]
+    for priority, value in pool[1:]:
+        if priority < best_priority or (priority == best_priority and len(value) > len(best_value)):
+            best_priority, best_value = priority, value
+    return best_value
