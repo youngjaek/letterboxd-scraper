@@ -9,7 +9,7 @@
 ```
 scrapers/
     full_profile_scraper.py   # historical crawl per user
-    rss_watcher.py            # incremental updates per user
+    rss_watcher.py            # optional watcher for RSS feeds
     follow_graph.py           # builds cohort membership
 pipeline.py                   # orchestrates scrape/update/export jobs
 db/
@@ -24,7 +24,7 @@ config/
 1. **Cohort definition**: given a seed user and depth rules, the follow graph scraper populates `cohort_members`.
 2. **Full scrape (phase 1)**: parallel worker pool crawls each member’s `/films/rated/.5-5/` pages plus `/likes/films/rated/none/`, inserting/updating the normalized `ratings` table. Release year is captured directly from the poster tiles and likes with no rating are stored as `rating=NULL, liked=TRUE`.
 3. **Enrichment pass (phase 2)**: opt-in command fetches TMDB metadata (IDs, runtime, directors, posters) and Letterboxd histogram stats from `/csi/film/{slug}/ratings-summary/` for films touched in phase 1, storing aggregate stats on `films` and `film_histograms`.
-4. **Incremental loop**: RSS watcher polls members’ feeds for new/updated ratings or diary entries and patches rows in `ratings`; run `scrape enrich` afterward if new films were introduced.
+4. **Incremental loop**: lightweight “when rated” scrapes revisit each member’s most recent activity pages, diff against stored ratings, and patch rows in `ratings`; run `scrape enrich` afterward if new films were introduced. (An RSS watcher utility exists but is optional and not part of the default pipeline.)
 5. **Aggregation refresh**: scheduled job recalculates cohort-level stats and derived rankings (materialized views).
 6. **Exports/UI**: CLI commands read aggregates to generate CSVs, dashboards, or API responses.
 
@@ -51,7 +51,9 @@ users (
     letterboxd_username TEXT UNIQUE NOT NULL,
     display_name TEXT,
     avatar_url TEXT,
-    last_follow_refresh TIMESTAMP
+    last_full_scrape_at TIMESTAMP,
+    last_incremental_scrape_at TIMESTAMP,
+    created_at TIMESTAMP DEFAULT NOW()
 )
 
 films (
@@ -142,11 +144,13 @@ film_rankings (
    - For each user (handled by a worker in the pool): paginate `/films/rated/…` pages and `/likes/films/rated/none/`, persist ratings/likes, and store `last_full_scrape_at`.
    - Supports `--resume-from user` via checkpoints table to survive crashes.
 
-2. **RSS watcher**
-   - Poll interval configurable per user/cohort.
-   - Reads RSS feed (`https://letterboxd.com/<user>/rss/`) and parses entries (diary/watch/reviews).
-   - Extract film slug + rating if present; if only diary entry exists, store watch/like event but leave rating NULL.
-   - Upsert into `ratings` (update `rating`, `rated_at`, `updated_at`, `liked`, `favorite`). Run the enrichment command separately when new films are introduced.
+2. **When-Rated incremental scraper**
+   - Uses the `/films/by/when-rated/` and `/likes/films/by/when-liked/` listings (or their RSS-equivalent endpoints fetched via HTML) to capture the newest activity per user without crawling the entire history.
+   - For each user, fetch the first N pages, stop once we encounter ratings already present in the snapshot, and upsert only the new items.
+   - Records `last_full_scrape_at` for bookkeeping but avoids touching older rows, dramatically reducing runtime between full scrapes.
+   - If new films appear, queue enrichment the same way we do for full scrapes.
+
+> **Optional RSS watcher**: we keep the RSS polling service around for future experimentation, but it is not part of the primary pipeline. It can be run separately when we want near-real-time updates or diary coverage.
 
 3. **Follow graph refresher**
    - Given cohort definition, crawl `/following` pages, diff against `cohort_members`, and insert/delete rows as needed.
@@ -158,7 +162,7 @@ film_rankings (
      - Nightly: `cli.py scrape incremental --cohort my_friends`
      - Weekly: `cli.py cohort refresh --cohort my_friends`
      - Monthly: `cli.py scrape full --cohort my_friends --resume`
-   - Scheduler ensures RSS watcher keeps the DB fresh while full scrapes repair drift or capture fields RSS omits (e.g., unrated watches).
+   - Scheduler ensures the incremental “when rated” scraper keeps the DB fresh while full scrapes repair drift or capture fields the incremental pass might skip.
 
 5. **Backoff & throttling**
    - Shared HTTP client with rate limiter (token bucket) to respect Letterboxd.
@@ -217,10 +221,10 @@ Implementation plan:
 - Logging & metrics: structured logs (JSON/text) plus optional progress bars via `rich`.
 
 ## Configuration & Secrets
-- `.env` or `config/default.toml` holds DB credentials, scraping concurrency, delays, default user-agent, and RSS polling intervals.
+- `.env` or `config/default.toml` holds DB credentials, scraping concurrency, delays, default user-agent, and incremental scrape settings (page depth, cutoff windows, etc.).
 - CLI accepts overrides (`--db-url`, `--cohort`, `--strategy`) for flexibility.
 
 ## Next Steps
 1. Finalize schema + create migrations.
 2. Implement CLI skeleton (Typer) with commands: `cohort build`, `scrape full`, `scrape incremental`, `refresh stats`, `export`.
-3. Flesh out incremental scraping (RSS + HTML fallback) and ranking strategies.
+3. Flesh out incremental scraping (when-rated diff) and ranking strategies.

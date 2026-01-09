@@ -24,9 +24,10 @@
    ```bash
    letterboxd-scraper export csv 1 --strategy bayesian --output exported/my_friends.csv
    ```
-7. **Incremental updates (RSS)**
+7. **Incremental updates (when rated)**
    ```bash
    letterboxd-scraper scrape incremental 1
    letterboxd-scraper stats refresh
    letterboxd-scraper rank compute 1 --strategy bayesian
    ```
+   > Optional: the legacy RSS watcher command can be run separately if needed, but it is no longer part of the core flow.

@@ -43,6 +43,8 @@ def apply_rss_entries(
             session.add(rating)
             rating_cache[film.id] = rating
         updated += 1
+    if updated:
+        user.last_incremental_scrape_at = datetime.now(timezone.utc)
     return updated
 
 

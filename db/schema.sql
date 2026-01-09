@@ -6,7 +6,7 @@ CREATE TABLE IF NOT EXISTS users (
     display_name TEXT,
     avatar_url TEXT,
     last_full_scrape_at TIMESTAMPTZ,
-    last_rss_poll_at TIMESTAMPTZ,
+    last_incremental_scrape_at TIMESTAMPTZ,
     created_at TIMESTAMPTZ DEFAULT NOW()
 );
 

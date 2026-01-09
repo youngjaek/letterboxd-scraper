@@ -59,6 +59,7 @@ def upsert_ratings(
     ratings: Iterable[FilmRating],
     *,
     touch_last_full: bool = True,
+    touch_last_incremental: bool = False,
 ) -> Set[int]:
     user = get_or_create_user(session, username)
     touched: Set[int] = set()
@@ -87,8 +88,11 @@ def upsert_ratings(
                 favorite=bool(payload.favorite),
             )
             session.add(rating)
+    now = datetime.now(timezone.utc)
     if touch_last_full:
-        user.last_full_scrape_at = datetime.now(timezone.utc)
+        user.last_full_scrape_at = now
+    if touch_last_incremental:
+        user.last_incremental_scrape_at = now
     session.flush()
     return touched
 

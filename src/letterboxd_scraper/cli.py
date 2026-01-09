@@ -91,6 +91,7 @@ def _scrape_user_ratings(
             username,
             combined,
             touch_last_full=not incremental,
+            touch_last_incremental=incremental,
         )
     return len(combined), touched
 

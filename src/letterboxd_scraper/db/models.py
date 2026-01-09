@@ -36,7 +36,7 @@ class User(Base):
     display_name: Mapped[Optional[str]] = mapped_column(String, nullable=True)
     avatar_url: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     last_full_scrape_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
-    last_rss_poll_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
+    last_incremental_scrape_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
 
     ratings: Mapped[list["Rating"]] = relationship(back_populates="user", cascade="all, delete-orphan")

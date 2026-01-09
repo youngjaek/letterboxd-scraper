@@ -170,6 +170,31 @@ def test_upsert_ratings_can_skip_last_full_scrape_timestamp():
     session.close()
 
 
+def test_upsert_ratings_updates_last_incremental_timestamp():
+    session = make_session()
+    rating_service.upsert_ratings(
+        session,
+        "inc",
+        [],
+        touch_last_full=False,
+        touch_last_incremental=True,
+    )
+    session.commit()
+    user = session.execute(select(models.User)).scalar_one()
+    assert user.last_full_scrape_at is None
+    assert user.last_incremental_scrape_at is not None
+    session.close()
+
+
+def test_upsert_ratings_can_skip_last_incremental_timestamp():
+    session = make_session()
+    rating_service.upsert_ratings(session, "skip-inc", [], touch_last_incremental=False)
+    session.commit()
+    user = session.execute(select(models.User)).scalar_one()
+    assert user.last_incremental_scrape_at is None
+    session.close()
+
+
 def test_get_user_rating_snapshot_and_match_logic():
     session = make_session()
     initial = [
