@@ -10,7 +10,7 @@
    ```
 3. **Full scrape (initial)**
    ```bash
-   letterboxd-scraper scrape full 1
+   letterboxd-scraper scrape 1 --full
    ```
 4. **Refresh stats view**
    ```bash
@@ -26,8 +26,8 @@
    ```
 7. **Incremental updates (when rated)**
    ```bash
-   letterboxd-scraper scrape incremental 1
+   letterboxd-scraper scrape 1
    letterboxd-scraper stats refresh
    letterboxd-scraper rank compute 1 --strategy bayesian
    ```
-   > Optional: the legacy RSS watcher command can be run separately if needed, but it is no longer part of the core flow.
+   > Pass `--full` if you need to force a full historical scrape for every member. Use `--print-only` to preview what would be fetched without persisting. Otherwise only new users run a full crawl while everyone else gets incremental updates. The legacy RSS watcher command can be run separately if needed, but it is no longer part of the core flow.

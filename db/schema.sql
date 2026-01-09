@@ -63,7 +63,7 @@ CREATE TABLE IF NOT EXISTS cohort_members (
 CREATE TABLE IF NOT EXISTS scrape_runs (
     id SERIAL PRIMARY KEY,
     cohort_id INT REFERENCES cohorts(id),
-    run_type TEXT NOT NULL, -- full, incremental, rss, follow_refresh
+    run_type TEXT NOT NULL, -- full, incremental, follow_refresh
     started_at TIMESTAMPTZ DEFAULT NOW(),
     finished_at TIMESTAMPTZ,
     status TEXT,

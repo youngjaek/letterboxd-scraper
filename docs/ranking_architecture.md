@@ -6,7 +6,7 @@ This document explains how ranking results and the new percentile-based “smart
 
 | Artifact | Source | Purpose |
 | --- | --- | --- |
-| `ratings` | Scrapers (`scrape full`, `scrape incremental`) | Raw rating rows for each cohort member. |
+| `ratings` | Scrapers (`scrape` with optional `--full`) | Raw rating rows for each cohort member. |
 | `cohort_members` | Follow graph scraper | Defines which users belong to each cohort. |
 | `cohort_film_stats` (materialized view) | `stats refresh` | Cohort-level aggregates (watchers, average rating, first/last rating timestamps). This is the standard input for both ranking and bucket computations. |
 | `film_rankings` | `rank compute` | Canonical ranking snapshot for each `(cohort_id, strategy)` pair. Stores rank, score, and strategy parameters. |
@@ -65,7 +65,7 @@ The `rank buckets` command focuses on surfacing interesting clusters without man
 ## Typical Workflow
 
 1. `cohort build` / `cohort refresh` – define membership.
-2. `scrape full` + `scrape incremental` – keep `ratings` current.
+2. `scrape` (with or without `--full`) – keep `ratings` current.
 3. `stats refresh` – rebuild `cohort_film_stats`.
 4. `rank compute` – populate `film_rankings`.
 5. `rank buckets --persist` – generate percentile/cluster slices for temporal windows or release eras.

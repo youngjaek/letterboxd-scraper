@@ -24,7 +24,7 @@ config/
 1. **Cohort definition**: given a seed user and depth rules, the follow graph scraper populates `cohort_members`.
 2. **Full scrape (phase 1)**: parallel worker pool crawls each member’s `/films/rated/.5-5/` pages plus `/likes/films/rated/none/`, inserting/updating the normalized `ratings` table. Release year is captured directly from the poster tiles and likes with no rating are stored as `rating=NULL, liked=TRUE`.
 3. **Enrichment pass (phase 2)**: opt-in command fetches TMDB metadata (IDs, runtime, directors, posters) and Letterboxd histogram stats from `/csi/film/{slug}/ratings-summary/` for films touched in phase 1, storing aggregate stats on `films` and `film_histograms`.
-4. **Incremental loop**: lightweight “when rated” scrapes revisit each member’s most recent activity pages, diff against stored ratings, and patch rows in `ratings`; run `scrape enrich` afterward if new films were introduced. (An RSS watcher utility exists but is optional and not part of the default pipeline.)
+4. **Incremental loop**: lightweight “when rated” scrapes revisit each member’s most recent activity pages, diff against stored ratings, and patch rows in `ratings`; run the enrichment command afterward if new films were introduced. (An RSS watcher utility exists but is optional and not part of the default pipeline.)
 5. **Aggregation refresh**: scheduled job recalculates cohort-level stats and derived rankings (materialized views).
 6. **Exports/UI**: CLI commands read aggregates to generate CSVs, dashboards, or API responses.
 
@@ -159,10 +159,10 @@ film_rankings (
 4. **Scheduler**
    - Could be a simple cron invoking CLI commands or a queue (Celery/RQ).
    - Example cadence:
-     - Nightly: `cli.py scrape incremental --cohort my_friends`
+     - Nightly: `cli.py scrape --cohort my_friends`
      - Weekly: `cli.py cohort refresh --cohort my_friends`
-     - Monthly: `cli.py scrape full --cohort my_friends --resume`
-   - Scheduler ensures the incremental “when rated” scraper keeps the DB fresh while full scrapes repair drift or capture fields the incremental pass might skip.
+     - Monthly: `cli.py scrape --cohort my_friends --full`
+   - Scheduler ensures the incremental “when rated” scraper keeps the DB fresh while explicit `--full` runs repair drift or capture fields the incremental pass might skip.
 
 5. **Backoff & throttling**
    - Shared HTTP client with rate limiter (token bucket) to respect Letterboxd.
@@ -212,8 +212,7 @@ Implementation plan:
 - Commands:
   - `cohort build --seed <user> --label <label> [--depth 1]`
   - `cohort refresh --cohort <id>`
-  - `scrape full --cohort <id> [--resume]`
-  - `scrape incremental --cohort <id>`
+  - `scrape --cohort <id> [--user <username>] [--full]`
   - `rank compute --cohort <id> --strategy <name>`
   - `export csv --cohort <id> --strategy <name> --min-score <x> --output <file>`
 - Global options: `--config config/default.toml`, `--db-url`, logging verbosity.
@@ -226,5 +225,5 @@ Implementation plan:
 
 ## Next Steps
 1. Finalize schema + create migrations.
-2. Implement CLI skeleton (Typer) with commands: `cohort build`, `scrape full`, `scrape incremental`, `refresh stats`, `export`.
+2. Implement CLI skeleton (Typer) with commands: `cohort build`, `scrape`, `enrich`, `refresh stats`, `export`.
 3. Flesh out incremental scraping (when-rated diff) and ranking strategies.

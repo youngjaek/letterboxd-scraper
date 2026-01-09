@@ -127,7 +127,7 @@ Materialized view `cohort_film_stats` will be extended to include:
 
 Key ideas:
 
-- The existing CLI workflows become job handlers invoked by the scheduler or API triggers. Each handler reuses current services (`cohort refresh`, `scrape full`, `scrape incremental`, `stats refresh`, `rank compute`, `rank buckets`), but note that full/incremental share the same rated-date stop logic and primarily differ in intent/telemetry. 
+- The existing CLI workflows become job handlers invoked by the scheduler or API triggers. Each handler reuses current services (`cohort refresh`, `scrape` with optional `--full`, `stats refresh`, `rank compute`, `rank buckets`), but note that full vs incremental now share the same rated-date stop logic and primarily differ in intent/telemetry. 
 - A metadata enrichment worker runs after scrapes to fetch TMDB data and rating histograms for any new films.
 - The web/API layer reads from `film_rankings`, `ranking_insights`, and `cohort_film_stats` to render dashboards (top films, hidden gems, divergences, filters).
 - Provide a self-hosted bundle (Docker compose) for power users plus a hosted multi-tenant deployment for the general audience.
@@ -169,7 +169,7 @@ Prebuilt slices:
 ### Phase 2 — Pipeline Automation
 
 1. Build a job runner (Celery/RQ/APS) that chains existing CLI steps:
-   - `cohort refresh` → `scrape full`/`scrape incremental` (same scraper, different intent) → `stats refresh` → `rank compute` → `rank buckets`.
+   - `cohort refresh` → `scrape [--full]` → `stats refresh` → `rank compute` → `rank buckets`.
 2. Implement telemetry/monitoring using `services.telemetry` outputs; add dashboards/log shipping plus SLO alerts on latency/failure rate.
 3. Schedule rated-date scrapes (full vs incremental just signal intent/telemetry) plus periodic metadata enrichment with worker pools respecting tuned concurrency caps.
 4. Add admin tooling to inspect scrape runs, cohort health, and film sync status; expose replay/backfill buttons per cohort.

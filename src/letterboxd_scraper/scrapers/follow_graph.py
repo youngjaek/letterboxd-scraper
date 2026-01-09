@@ -236,7 +236,7 @@ def _extract_display_name(
         for real_node in node.select(".real-name"):
             add_candidate(real_node.get_text(" ", strip=True), base_priority)
         for name_node in node.select(".name"):
-            add_candidate(name_node.get_text(" ", strip=True), base_priority + 1)
+            add_candidate(name_node.get_text(" ", strip=True), base_priority + 2)
         for img in node.select("img[alt]"):
             add_candidate(img.get("alt"), base_priority)
 
@@ -255,7 +255,7 @@ def _extract_display_name(
             break
 
     def _matches_username(value: str) -> bool:
-        normalized = value.lstrip("@").lower()
+        normalized = value.strip().lstrip("@").lower()
         return normalized == username.lower()
 
     filtered = [cand for cand in candidates if not _matches_username(cand[1])]

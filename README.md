@@ -4,7 +4,7 @@ Personalized Letterboxd cohort scraper that builds per-friend-group rankings by:
 - Crawling follow graphs to define “cohorts” (you + people you follow, a friend + their follows, etc.).
 - Scraping each member’s rated films, storing normalized ratings, and refreshing stats.
 - Computing ranking strategies (currently Bayesian weighted average) and exporting CSV lists.
-- Applying incremental updates via each member’s Letterboxd RSS feed so data stays fresh.
+- Applying incremental updates via each member’s “when rated” activity so data stays fresh without full re-scrapes.
 
 ## Project Structure
 
@@ -37,9 +37,8 @@ The Typer CLI surfaces each workflow step. Commands are grouped by workflow so y
 
 ### Scraping + stats commands
 
-- `letterboxd-scraper scrape full <cohort_id> [--user username]` — parallel worker pool that fetches each member’s `/films/rated/.5-5/` pages **and** `/likes/films/rated/none/`, storing ratings plus unrated likes. Pass `--user` to force a single cohort member through the scraper (ignores TTL).
-- `letterboxd-scraper scrape enrich [--tmdb/--no-tmdb] [--histograms/--no-histograms] [--limit N] [--slug film-slug]` — second pass that hydrates touched films with TMDB metadata (IDs, runtime, poster, directors) and Letterboxd histogram stats from `/csi/film/{slug}/ratings-summary/`. Use `--slug` when only one film needs an enrichment retry.
-- `letterboxd-scraper scrape incremental <cohort_id> [--user username]` — RSS-driven updates that upsert new ratings/likes into `ratings` (no enrichment; follow with `scrape enrich` when convenient). `--user` restricts the run to one cohort member.
+- `letterboxd-scraper scrape <cohort_id> [--user username] [--full] [--print-only]` — default scraper. Runs incremental “when rated” updates for members who were previously scraped, and automatically falls back to a full historical scrape for brand-new members. Pass `--full` to force a full crawl for all targeted users, or `--print-only` to preview what would be fetched without touching the database.
+- `letterboxd-scraper enrich [--tmdb/--no-tmdb] [--histograms/--no-histograms] [--limit N] [--slug film-slug]` — second pass that hydrates touched films with TMDB metadata (IDs, runtime, poster, directors) and Letterboxd histogram stats from `/csi/film/{slug}/ratings-summary/`. Use `--slug` when only one film needs an enrichment retry.
 - `letterboxd-scraper stats refresh [--concurrent/--no-concurrent]` — rebuild the `cohort_film_stats` materialized view (now only counting rows where `rating IS NOT NULL`).
 
 ### User metadata commands
@@ -80,15 +79,15 @@ Each command respects configuration passed via `.env`, environment variables, or
    ```bash
    letterboxd-scraper cohort build --seed my_username --label "My Friends"
    letterboxd-scraper cohort refresh 1
-   letterboxd-scraper scrape full 1
-   letterboxd-scraper scrape enrich --tmdb --histograms
+   letterboxd-scraper scrape 1
+   letterboxd-scraper enrich --tmdb --histograms
    letterboxd-scraper stats refresh
    letterboxd-scraper rank compute 1 --strategy bayesian
    letterboxd-scraper export csv 1 --strategy bayesian --output exported/my_friends.csv
    ```
    For subsequent updates:
    ```bash
-   letterboxd-scraper scrape incremental 1
+   letterboxd-scraper scrape 1
    letterboxd-scraper stats refresh
    letterboxd-scraper rank compute 1 --strategy bayesian
    letterboxd-scraper rank subset 1 --strategy bayesian --list-path user/list/example-list/

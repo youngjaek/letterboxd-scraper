@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from collections import Counter
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 from pathlib import Path
 from time import perf_counter
 from typing import Any, Dict, Optional, Set
@@ -39,14 +39,12 @@ app = typer.Typer(
     rich_markup_mode="markdown",
 )
 cohort_app = typer.Typer(help="Manage cohorts (follow lists).", no_args_is_help=True)
-scrape_app = typer.Typer(help="Scraping commands.", no_args_is_help=True)
 stats_app = typer.Typer(help="Statistics/materialized view maintenance.", no_args_is_help=True)
 rank_app = typer.Typer(help="Ranking computations.", no_args_is_help=True)
 export_app = typer.Typer(help="Export data into consumable formats.")
 user_app = typer.Typer(help="User metadata utilities.", no_args_is_help=True)
 
 app.add_typer(cohort_app, name="cohort")
-app.add_typer(scrape_app, name="scrape")
 app.add_typer(stats_app, name="stats")
 app.add_typer(rank_app, name="rank")
 app.add_typer(export_app, name="export")
@@ -62,6 +60,7 @@ def _scrape_user_ratings(
     username: str,
     *,
     incremental: bool = False,
+    print_only: bool = False,
 ) -> tuple[int, Set[int]]:
     """Fetch ratings + likes for a single user and persist them."""
     with get_session(settings) as session:
@@ -85,6 +84,32 @@ def _scrape_user_ratings(
         scraper.close()
     likes_only = [item for item in likes if item.film_slug not in rated_slugs]
     combined = ratings + likes_only
+    if print_only:
+        mode = "incremental" if incremental else "full"
+        console.print(
+            f"[magenta]Preview[/magenta] @{username} ({mode}) — "
+            f"{len(combined)} item(s) fetched (no DB writes)."
+        )
+        preview_limit = 25
+        for entry in combined[:preview_limit]:
+            rating_text = (
+                f"{entry.rating:.1f}"
+                if entry.rating is not None
+                else ("liked" if entry.liked else "unrated")
+            )
+            flags = []
+            if entry.liked and entry.rating is not None:
+                flags.append("liked")
+            if entry.favorite:
+                flags.append("favorite")
+            flag_text = f" [{' ,'.join(flags)}]" if flags else ""
+            console.print(
+                f"  • {entry.film_slug:<25} "
+                f"{rating_text}{flag_text}"
+            )
+        if len(combined) > preview_limit:
+            console.print(f"  … {len(combined) - preview_limit} more item(s) truncated.")
+        return len(combined), set()
     with get_session(settings) as session:
         touched = rating_service.upsert_ratings(
             session,
@@ -224,23 +249,31 @@ def cohort_delete(
     console.print(f"[green]Deleted[/green] cohort {cohort_id} ('{label}').")
 
 
-@scrape_app.command("full")
-def scrape_full(
+@app.command("scrape")
+def scrape(
     ctx: typer.Context,
     cohort_id: int = typer.Argument(..., help="Cohort identifier."),
-    resume: bool = typer.Option(False, "--resume/--no-resume", help="Resume from last checkpoint."),
+    full: bool = typer.Option(
+        False,
+        "--full/--incremental",
+        help="Force a full history scrape for all targeted users.",
+    ),
     user: Optional[str] = typer.Option(
         None,
         "--user",
         help="Restrict scraping to a single cohort member (Letterboxd username).",
     ),
+    print_only: bool = typer.Option(
+        False,
+        "--print-only",
+        help="Preview newly fetched ratings without writing to the database.",
+    ),
 ) -> None:
-    """Run a full historical scrape for every user in the cohort."""
+    """Scrape cohort members, defaulting to incremental updates when possible."""
     settings = get_state(ctx)["settings"]
-    usernames: list[str] = []
-    skipped: list[str] = []
     with get_session(settings) as session:
-        if not cohort_service.get_cohort(session, cohort_id):
+        cohort = cohort_service.get_cohort(session, cohort_id)
+        if not cohort:
             typer.echo(f"Cohort {cohort_id} not found.")
             raise typer.Exit(code=1)
         members = cohort_service.list_member_scrape_freshness(session, cohort_id)
@@ -255,150 +288,65 @@ def scrape_full(
             typer.echo(f"User '{user}' is not a member of cohort {cohort_id}.")
             raise typer.Exit(code=1)
         members = filtered
-    total_members = len(members)
-    ttl_hours = max(0, getattr(settings.scraper, "full_scrape_ttl_hours", 0))
-    cutoff = None
-    if ttl_hours > 0 and not user:
-        cutoff = datetime.now(timezone.utc) - timedelta(hours=ttl_hours)
-    for username, last_scraped in members:
-        if cutoff and last_scraped and last_scraped >= cutoff:
-            skipped.append(username)
-            continue
-        usernames.append(username)
-    if skipped:
-        preview = ", ".join(skipped[:5])
-        extra = f" (+{len(skipped) - 5} more)" if len(skipped) > 5 else ""
-        console.print(
-            f"[yellow]Skipping[/yellow] {len(skipped)} recently scraped user(s) "
-            f"(last < {ttl_hours}h): {preview}{extra}"
-        )
-    if not usernames:
-        if total_members:
-            console.print(
-                f"[green]Cohort[/green] {cohort_id}: all {total_members} members were scraped < {ttl_hours}h ago."
-            )
-        else:
-            console.print(f"[yellow]Cohort[/yellow] {cohort_id} has no members to scrape.")
-        return
-    run_id = None
-    with get_session(settings) as session:
-        run_id = telemetry_service.record_scrape_run(
-            session,
-            cohort_id=cohort_id,
-            run_type="full",
-            status="running",
-        )
-    status = "success"
-    note = None
-    touched_films: set[int] = set()
-    try:
-        with telemetry_service.timed_operation(f"scrape_full[{cohort_id}]"):
-            max_workers = max(1, settings.scraper.max_concurrency)
-            console.print(
-                f"[green]Queued[/green] {len(usernames)} users "
-                f"with {max_workers} worker(s)."
-            )
-            futures: Dict[Any, str] = {}
-            with ThreadPoolExecutor(max_workers=max_workers) as executor:
-                for username in usernames:
-                    futures[executor.submit(_scrape_user_ratings, settings, username)] = username
-                for future in as_completed(futures):
-                    username = futures[future]
-                    try:
-                        count, touched = future.result()
-                        touched_films.update(touched)
-                        console.print(
-                            f"[cyan]{username}[/cyan]: processed {count} ratings/likes."
-                        )
-                    except Exception as exc:
-                        status = "failed"
-                        note = f"{username} failed: {exc}"
-                        raise
-    except Exception as exc:
-        status = "failed"
-        note = str(exc)
-        raise
-    finally:
-        if run_id:
-            with get_session(settings) as session:
-                telemetry_service.finalize_scrape_run(
-                    session, run_id, status=status, notes=note
-                )
-    console.print(f"[green]Completed[/green] full scrape for cohort {cohort_id}.")
-    console.print(
-        f"[yellow]Next[/yellow]: run 'letterboxd-scraper scrape enrich' to hydrate "
-        f"metadata for {len(touched_films)} films."
-    )
-
-
-@scrape_app.command("incremental")
-def scrape_incremental(
-    ctx: typer.Context,
-    cohort_id: int = typer.Argument(..., help="Cohort identifier."),
-    user: Optional[str] = typer.Option(
-        None,
-        "--user",
-        help="Restrict incremental scraping to a single cohort member (Letterboxd username).",
-    ),
-) -> None:
-    """Apply incremental updates via rated-date scraping."""
-    settings = get_state(ctx)["settings"]
-    with get_session(settings) as session:
-        cohort = cohort_service.get_cohort(session, cohort_id)
-        if not cohort:
-            typer.echo(f"Cohort {cohort_id} not found.")
-            raise typer.Exit(code=1)
-        usernames = cohort_service.list_member_usernames(session, cohort_id)
-    if user:
-        normalized = user.strip().lower()
-        filtered = [name for name in usernames if name.lower() == normalized]
-        if not filtered:
-            typer.echo(f"User '{user}' is not a member of cohort {cohort_id}.")
-            raise typer.Exit(code=1)
-        usernames = filtered
-    if not usernames:
+    if not members:
         console.print(f"[yellow]Cohort[/yellow] {cohort_id} has no members to scrape.")
         return
+    jobs: list[tuple[str, bool]] = []
+    brand_new = 0
+    for username, last_scraped in members:
+        needs_full = full or (last_scraped is None)
+        if needs_full and last_scraped is None:
+            brand_new += 1
+        jobs.append((username, needs_full))
+    run_type = "full" if full else "incremental"
     run_id = None
-    with get_session(settings) as session:
-        run_id = telemetry_service.record_scrape_run(
-            session,
-            cohort_id=cohort_id,
-            run_type="incremental",
-            status="running",
-        )
+    if not print_only:
+        with get_session(settings) as session:
+            run_id = telemetry_service.record_scrape_run(
+                session,
+                cohort_id=cohort_id,
+                run_type=run_type,
+                status="running",
+            )
     status = "success"
     note = None
     touched_films: set[int] = set()
+    full_count = sum(1 for _, needs_full in jobs if needs_full)
+    incremental_count = len(jobs) - full_count
     try:
-        with telemetry_service.timed_operation(f"scrape_incremental[{cohort_id}]"):
+        label = "full" if full else "incremental"
+        with telemetry_service.timed_operation(f"scrape[{cohort_id}:{label}]"):
             max_workers = max(1, settings.scraper.max_concurrency)
             console.print(
-                f"[green]Queued[/green] {len(usernames)} users "
+                f"[green]Queued[/green] {len(jobs)} users "
+                f"({full_count} full / {incremental_count} incremental) "
                 f"with {max_workers} worker(s)."
             )
-            futures: Dict[Any, str] = {}
+            futures: Dict[Any, tuple[str, bool]] = {}
             with ThreadPoolExecutor(max_workers=max_workers) as executor:
-                for username in usernames:
+                for username, needs_full in jobs:
                     futures[
                         executor.submit(
                             _scrape_user_ratings,
                             settings,
                             username,
-                            incremental=True,
+                            incremental=not needs_full,
+                            print_only=print_only,
                         )
-                    ] = username
+                    ] = (username, needs_full)
                 for future in as_completed(futures):
-                    username = futures[future]
+                    username, needs_full = futures[future]
                     try:
                         count, touched = future.result()
                         touched_films.update(touched)
+                        mode_label = "full" if needs_full else "incremental"
                         console.print(
-                            f"[cyan]{username}[/cyan]: processed {count} incremental tiles."
+                            f"[cyan]{username}[/cyan]: processed {count} {mode_label} tiles."
                         )
                     except Exception as exc:
                         status = "failed"
-                        note = f"{username} failed: {exc}"
+                        if not print_only:
+                            note = f"{username} failed: {exc}"
                         raise
     except Exception as exc:
         status = "failed"
@@ -410,15 +358,26 @@ def scrape_incremental(
                 telemetry_service.finalize_scrape_run(
                     session, run_id, status=status, notes=note
                 )
-    console.print(f"[green]Incremental update complete[/green]; {len(touched_films)} films touched.")
+    if print_only:
+        console.print("[green]Preview complete[/green]; no database changes were made.")
+        return
+    summary = (
+        f"[green]Scrape complete[/green]; "
+        f"{len(touched_films)} films touched "
+        f"({full_count} full / {incremental_count} incremental users"
+    )
+    if brand_new and not full:
+        summary += f", {brand_new} brand-new member(s) scraped fully"
+    summary += ")."
+    console.print(summary)
     if touched_films:
         console.print(
-            f"[yellow]Next[/yellow]: run 'letterboxd-scraper scrape enrich' "
+            f"[yellow]Next[/yellow]: run 'letterboxd-scraper enrich' "
             f"to hydrate metadata for {len(touched_films)} films."
         )
 
 
-@scrape_app.command("enrich")
+@app.command("enrich")
 def scrape_enrich(
     ctx: typer.Context,
     limit: Optional[int] = typer.Option(None, "--limit", help="Maximum films to enrich."),
