@@ -79,6 +79,18 @@ CREATE TABLE IF NOT EXISTS user_scrape_state (
     PRIMARY KEY (user_id)
 );
 
+CREATE TABLE IF NOT EXISTS job_runs (
+    id SERIAL PRIMARY KEY,
+    job_name TEXT NOT NULL,
+    cohort_id INT REFERENCES cohorts(id),
+    user_id INT REFERENCES users(id),
+    status TEXT NOT NULL DEFAULT 'pending',
+    payload JSONB,
+    started_at TIMESTAMPTZ DEFAULT NOW(),
+    finished_at TIMESTAMPTZ,
+    last_error TEXT
+);
+
 CREATE TABLE IF NOT EXISTS film_rankings (
     cohort_id INT REFERENCES cohorts(id) ON DELETE CASCADE,
     strategy TEXT NOT NULL,

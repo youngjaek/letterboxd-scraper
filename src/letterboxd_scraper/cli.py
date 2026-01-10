@@ -22,13 +22,13 @@ from .services import ratings as rating_service
 from .services import rankings as ranking_service
 from .services import stats as stats_service
 from .services import telemetry as telemetry_service
+from .services import workflows as workflow_service
 from .services.enrichment import enrich_film_metadata, film_needs_enrichment
 from .scrapers.film_pages import FilmPageScraper
 from .scrapers.person_pages import PersonPageScraper
 from .scrapers.follow_graph import FollowGraphScraper, expand_follow_graph
 from .scrapers.histograms import RatingsHistogramScraper
 from .scrapers.listings import PosterListingScraper
-from .scrapers.ratings import FilmRating, ProfileRatingsScraper
 from .services.tmdb import TMDBClient
 
 console = Console()
@@ -62,28 +62,15 @@ def _scrape_user_ratings(
     incremental: bool = False,
     print_only: bool = False,
 ) -> tuple[int, Set[int]]:
-    """Fetch ratings + likes for a single user and persist them."""
-    with get_session(settings) as session:
-        snapshot = rating_service.get_user_rating_snapshot(session, username)
-    scraper = ProfileRatingsScraper(settings)
-    try:
-        ratings: list[FilmRating] = []
-        for payload in scraper.fetch_user_ratings(username):
-            if rating_service.rating_matches_snapshot(snapshot, payload):
-                break
-            ratings.append(payload)
-        rated_slugs = {item.film_slug for item in ratings}
-        likes: list[FilmRating] = []
-        for payload in scraper.fetch_user_liked_films(username):
-            if payload.film_slug in rated_slugs:
-                continue
-            if rating_service.rating_matches_snapshot(snapshot, payload):
-                break
-            likes.append(payload)
-    finally:
-        scraper.close()
-    likes_only = [item for item in likes if item.film_slug not in rated_slugs]
-    combined = ratings + likes_only
+    """Fetch ratings + likes for a single user and optionally persist them."""
+    result = workflow_service.scrape_user_ratings(
+        settings,
+        username,
+        incremental=incremental,
+        persist=not print_only,
+        include_entries=print_only,
+    )
+    combined = result.entries or []
     if print_only:
         mode = "incremental" if incremental else "full"
         console.print(
@@ -106,19 +93,11 @@ def _scrape_user_ratings(
             console.print(
                 f"  • {entry.film_slug:<25} "
                 f"{rating_text}{flag_text}"
-            )
+        )
         if len(combined) > preview_limit:
             console.print(f"  … {len(combined) - preview_limit} more item(s) truncated.")
         return len(combined), set()
-    with get_session(settings) as session:
-        touched = rating_service.upsert_ratings(
-            session,
-            username,
-            combined,
-            touch_last_full=not incremental,
-            touch_last_incremental=incremental,
-        )
-    return len(combined), touched
+    return result.fetched, result.touched_film_ids
 
 
 @app.callback()

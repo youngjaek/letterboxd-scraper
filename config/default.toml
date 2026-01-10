@@ -27,3 +27,11 @@ include_seed = true
 follow_depth = 1
 min_votes = 25
 m_value = 50
+
+[task_queue]
+broker_url = "redis://localhost:6379/0"
+result_backend = "redis://localhost:6379/1"
+default_queue = "default"
+scrape_queue = "scrape"
+stats_queue = "stats"
+enrichment_queue = "enrichment"

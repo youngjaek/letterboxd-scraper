@@ -199,6 +199,20 @@ class FilmPerson(Base):
     film: Mapped["Film"] = relationship(back_populates="people")
 
 
+class JobRun(Base):
+    __tablename__ = "job_runs"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    job_name: Mapped[str] = mapped_column(String, nullable=False)
+    cohort_id: Mapped[Optional[int]] = mapped_column(ForeignKey("cohorts.id"))
+    user_id: Mapped[Optional[int]] = mapped_column(ForeignKey("users.id"))
+    status: Mapped[str] = mapped_column(String, nullable=False, default="pending")
+    payload: Mapped[Optional[Dict[str, Any]]] = mapped_column(JSON, nullable=True)
+    started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
+    finished_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
+    last_error: Mapped[Optional[str]] = mapped_column(Text)
+
+
 class FilmHistogram(Base):
     __tablename__ = "film_histograms"
 

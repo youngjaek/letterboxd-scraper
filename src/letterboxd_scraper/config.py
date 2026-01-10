@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Dict, Optional
 import os
@@ -57,13 +57,24 @@ class CohortDefaults:
 
 
 @dataclass
+class TaskQueueSettings:
+    broker_url: str = "redis://localhost:6379/0"
+    result_backend: str = "redis://localhost:6379/1"
+    default_queue: str = "default"
+    scrape_queue: str = "scrape"
+    stats_queue: str = "stats"
+    enrichment_queue: str = "enrichment"
+
+
+@dataclass
 class Settings:
     database: DatabaseSettings
     scraper: ScraperSettings
     rss: RSSSettings
     tmdb: TMDBSettings
     cohort_defaults: CohortDefaults
-    raw: Dict[str, Any]
+    raw: Dict[str, Any] = field(default_factory=dict)
+    task_queue: TaskQueueSettings = field(default_factory=TaskQueueSettings)
 
     def as_dict(self) -> Dict[str, Any]:
         return {
@@ -71,6 +82,7 @@ class Settings:
             "scraper": self.scraper.__dict__,
             "rss": self.rss.__dict__,
             "cohort_defaults": self.cohort_defaults.__dict__,
+            "task_queue": self.task_queue.__dict__,
         }
 
 
@@ -95,6 +107,7 @@ def load_settings(config_path: Optional[Path] = None) -> Settings:
     rss_cfg = data.get("rss", {})
     tmdb_cfg = data.get("tmdb", {})
     cohort_cfg = data.get("cohort_defaults", {})
+    task_queue_cfg = data.get("task_queue", {})
 
     db_settings = DatabaseSettings(
         url=os.getenv("DATABASE_URL", database_cfg.get("url", "")),
@@ -139,12 +152,26 @@ def load_settings(config_path: Optional[Path] = None) -> Settings:
         m_value=int(os.getenv("COHORT_M_VALUE", cohort_cfg.get("m_value", 50))),
     )
 
+    task_queue_settings = TaskQueueSettings(
+        broker_url=os.getenv("TASK_QUEUE_BROKER_URL", task_queue_cfg.get("broker_url", "redis://localhost:6379/0")),
+        result_backend=os.getenv(
+            "TASK_QUEUE_RESULT_BACKEND", task_queue_cfg.get("result_backend", "redis://localhost:6379/1")
+        ),
+        default_queue=os.getenv("TASK_QUEUE_DEFAULT_QUEUE", task_queue_cfg.get("default_queue", "default")),
+        scrape_queue=os.getenv("TASK_QUEUE_SCRAPE_QUEUE", task_queue_cfg.get("scrape_queue", "scrape")),
+        stats_queue=os.getenv("TASK_QUEUE_STATS_QUEUE", task_queue_cfg.get("stats_queue", "stats")),
+        enrichment_queue=os.getenv(
+            "TASK_QUEUE_ENRICHMENT_QUEUE", task_queue_cfg.get("enrichment_queue", "enrichment")
+        ),
+    )
+
     return Settings(
         database=db_settings,
         scraper=scraper_settings,
         rss=rss_settings,
         tmdb=tmdb_settings,
         cohort_defaults=cohort_settings,
+        task_queue=task_queue_settings,
         raw=data,
     )
 
