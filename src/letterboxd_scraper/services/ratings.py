@@ -60,6 +60,7 @@ def upsert_ratings(
     *,
     touch_last_full: bool = True,
     touch_last_incremental: bool = False,
+    favorite_slugs: Optional[Set[str]] = None,
 ) -> Set[int]:
     user = get_or_create_user(session, username)
     touched: Set[int] = set()
@@ -94,6 +95,8 @@ def upsert_ratings(
     if touch_last_incremental:
         user.last_incremental_scrape_at = now
     session.flush()
+    if favorite_slugs is not None:
+        _sync_user_favorites(session, user.id, favorite_slugs)
     return touched
 
 
@@ -163,3 +166,19 @@ def _normalize_rating_value(value: Optional[float | Decimal]) -> Optional[float]
     if isinstance(value, Decimal):
         return float(value)
     return float(value)
+
+
+def _sync_user_favorites(
+    session: Session,
+    user_id: int,
+    favorite_slugs: Set[str],
+) -> None:
+    stmt = (
+        select(models.Rating)
+        .join(models.Film, models.Film.id == models.Rating.film_id)
+        .where(models.Rating.user_id == user_id, models.Rating.favorite.is_(True))
+    )
+    if favorite_slugs:
+        stmt = stmt.where(~models.Film.slug.in_(favorite_slugs))
+    for rating in session.scalars(stmt):
+        rating.favorite = False

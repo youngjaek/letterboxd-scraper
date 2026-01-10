@@ -158,14 +158,30 @@ def test_profile_ratings_captures_like_and_favorite_flags():
     assert ratings[2].release_year == 2012
 
 
+def test_fetch_profile_favorites_returns_entries():
+    profile_html = read_fixture("profile_page_with_favorites.html")
+    settings = make_settings()
+    scraper = ProfileRatingsScraper(settings)
+    with patch.object(
+        scraper.client,
+        "get",
+        return_value=Mock(status_code=200, text=profile_html),
+    ):
+        favorites = scraper.fetch_profile_favorites("testuser")
+    assert {entry.film_slug for entry in favorites} == {"favorite-film", "both-film"}
+    assert all(entry.favorite for entry in favorites)
+
+
 def test_profile_likes_without_ratings():
     likes_html = read_fixture("likes_page.html")
+    profile_html = "<html></html>"
     settings = make_settings()
     scraper = ProfileRatingsScraper(settings)
     with patch.object(
         scraper.client,
         "get",
         side_effect=[
+            Mock(status_code=200, text=profile_html),
             Mock(status_code=200, text=likes_html),
             Mock(status_code=200, text=""),
         ],

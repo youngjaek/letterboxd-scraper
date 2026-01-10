@@ -94,13 +94,19 @@ def scrape_user_ratings(
     scraper = ProfileRatingsScraper(settings)
     ratings: list[FilmRating] = []
     likes: list[FilmRating] = []
+    profile_favorites: list[FilmRating] = []
+    favorite_profile_slugs: Set[str] = set()
     try:
-        for payload in scraper.fetch_user_ratings(username):
+        profile_favorites = scraper.fetch_profile_favorites(username)
+        favorite_profile_slugs = {
+            entry.film_slug for entry in profile_favorites if entry.film_slug
+        }
+        for payload in scraper.fetch_user_ratings(username, favorite_slugs=favorite_profile_slugs):
             if rating_service.rating_matches_snapshot(snapshot, payload):
                 break
             ratings.append(payload)
         rated_slugs = {item.film_slug for item in ratings}
-        for payload in scraper.fetch_user_liked_films(username):
+        for payload in scraper.fetch_user_liked_films(username, favorite_slugs=favorite_profile_slugs):
             if payload.film_slug in rated_slugs:
                 continue
             if rating_service.rating_matches_snapshot(snapshot, payload):
@@ -110,8 +116,15 @@ def scrape_user_ratings(
         scraper.close()
     likes_only = [item for item in likes if item.film_slug not in rated_slugs]
     combined = ratings + likes_only
+    seen_slugs = {entry.film_slug for entry in combined if entry.film_slug}
+    for favorite_entry in profile_favorites:
+        slug = favorite_entry.film_slug
+        if not slug or slug in seen_slugs:
+            continue
+        combined.append(favorite_entry)
+        seen_slugs.add(slug)
     touched: Set[int] = set()
-    if persist and combined:
+    if persist:
         with get_session(settings) as session:
             touched = rating_service.upsert_ratings(
                 session,
@@ -119,6 +132,7 @@ def scrape_user_ratings(
                 combined,
                 touch_last_full=not incremental,
                 touch_last_incremental=incremental,
+                favorite_slugs=favorite_profile_slugs,
             )
     entries = combined if include_entries else None
     return UserScrapeResult(

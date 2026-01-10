@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Iterable, List, Optional, Sequence, Set
+from typing import Dict, Iterable, List, Optional, Sequence, Set
 
 import httpx
 from bs4.element import Tag
@@ -33,13 +33,15 @@ class ProfileRatingsScraper:
     def __init__(self, settings: Settings):
         self.settings = settings
         self.client = ThrottledClient(settings)
+        self._favorite_cache: Dict[str, List[FilmRating]] = {}
 
     def fetch_user_ratings(
         self,
         username: str,
         sort: Optional[str] = "rated-date",
+        favorite_slugs: Optional[Set[str]] = None,
     ) -> Iterable[FilmRating]:
-        favorite_slugs = self._fetch_favorite_slugs(username)
+        favorite_slugs = self._ensure_favorite_slugs(username, favorite_slugs)
         page = 1
         base_url = f"https://letterboxd.com/{username}/films/rated/.5-5/"
         if sort:
@@ -83,7 +85,13 @@ class ProfileRatingsScraper:
                 )
             page += 1
 
-    def fetch_user_liked_films(self, username: str) -> Iterable[FilmRating]:
+    def fetch_user_liked_films(
+        self,
+        username: str,
+        *,
+        favorite_slugs: Optional[Set[str]] = None,
+    ) -> Iterable[FilmRating]:
+        favorite_slugs = self._ensure_favorite_slugs(username, favorite_slugs)
         page = 1
         while True:
             url = f"https://letterboxd.com/{username}/likes/films/rated/none/page/{page}/"
@@ -111,7 +119,7 @@ class ProfileRatingsScraper:
                     film_title=title,
                     rating=None,
                     liked=True,
-                    favorite=self._is_favorite(film),
+                    favorite=(slug in favorite_slugs) or self._is_favorite(film),
                     letterboxd_film_id=lb_film_id,
                     release_year=release_year,
                 )
@@ -119,6 +127,93 @@ class ProfileRatingsScraper:
 
     def close(self) -> None:
         self.client.close()
+
+    def fetch_profile_favorites(self, username: str) -> List[FilmRating]:
+        if username in self._favorite_cache:
+            return list(self._favorite_cache[username])
+        favorites = self._load_profile_favorites(username)
+        self._favorite_cache[username] = favorites
+        return list(favorites)
+
+    def _ensure_favorite_slugs(
+        self,
+        username: str,
+        provided: Optional[Set[str]],
+    ) -> Set[str]:
+        if provided is not None:
+            return provided
+        favorites = self.fetch_profile_favorites(username)
+        return {entry.film_slug for entry in favorites if entry.film_slug}
+
+    def _load_profile_favorites(self, username: str) -> List[FilmRating]:
+        url = f"https://letterboxd.com/{username}/"
+        try:
+            response = self.client.get(url)
+        except httpx.HTTPError:
+            return []
+        soup = parse_html_document(response.text)
+        selectors = [
+            "#favourites",
+            "#favorites",
+            "section.favourites",
+            "section.favorites",
+            ".profile-favourites",
+            ".profile-favorites",
+        ]
+        favorites: List[FilmRating] = []
+        seen: Set[str] = set()
+        containers: List[Tag] = []
+        for selector in selectors:
+            containers.extend(soup.select(selector))
+        for container in containers:
+            nodes = list(find_poster_entries(container))
+            nodes.extend(container.select("[data-film-slug], [data-item-slug]"))
+            nodes.extend(container.select("[data-target-link], [data-item-link], a[href]"))
+            for film in nodes:
+                slug, title, lb_film_id = extract_film_metadata(film)
+                if not slug:
+                    slug = slug_from_link(
+                        film.get("data-target-link")
+                        or film.get("data-item-link")
+                        or film.get("href")
+                    )
+                if not slug or slug in seen:
+                    continue
+                title = title or film.get("data-item-name") or film.get("data-film-title")
+                if not title:
+                    img = film.find("img", alt=True)
+                    if img:
+                        title = img.get("alt")
+                if not title:
+                    continue
+                seen.add(slug)
+                year_context = []
+                for candidate in (
+                    film.get("data-film-name"),
+                    film.get("data-item-name"),
+                    film.get("data-film-title"),
+                    title,
+                ):
+                    if candidate:
+                        year_context.append(candidate)
+                release_year = extract_year(film, tuple(year_context))
+                rating_element = (
+                    film.select_one("p.poster-viewingdata span.rating")
+                    or film.find("span", class_="rating")
+                )
+                rating_value = self._extract_rating_value(film, rating_element)
+                favorites.append(
+                    FilmRating(
+                        film_slug=slug,
+                        film_title=title,
+                        rating=rating_value,
+                        liked=self._is_liked(film),
+                        favorite=True,
+                        letterboxd_film_id=lb_film_id,
+                        release_year=release_year,
+                    )
+                )
+        return favorites
 
     @staticmethod
     def _extract_rating_value(film: Tag, rating_element: Optional[Tag]) -> Optional[float]:
@@ -214,49 +309,6 @@ class ProfileRatingsScraper:
             ".favorite",
         )
         return ProfileRatingsScraper._has_flag(film, attr_markers, class_markers, selectors)
-
-    def _fetch_favorite_slugs(self, username: str) -> Set[str]:
-        """Fetch favorite films from the profile landing page."""
-        url = f"https://letterboxd.com/{username}/"
-        try:
-            response = self.client.get(url)
-        except httpx.HTTPError:
-            return set()
-        soup = parse_html_document(response.text)
-        selectors = [
-            "#favourites",
-            "#favorites",
-            "section.favourites",
-            "section.favorites",
-            ".profile-favourites",
-            ".profile-favorites",
-        ]
-        favorite_slugs: Set[str] = set()
-        containers = []
-        for selector in selectors:
-            containers.extend(soup.select(selector))
-        if not containers:
-            return favorite_slugs
-        for container in containers:
-            favorite_slugs.update(self._extract_favorite_slugs(container))
-        return favorite_slugs
-
-    @staticmethod
-    def _extract_favorite_slugs(container: Tag) -> Set[str]:
-        slugs: Set[str] = set()
-        for node in container.select("[data-film-slug]"):
-            slug = (node.get("data-film-slug") or "").strip()
-            if slug:
-                slugs.add(slug)
-        for node in container.select("[data-target-link], [data-item-link], a[href]"):
-            slug = slug_from_link(
-                node.get("data-target-link")
-                or node.get("data-item-link")
-                or node.get("href")
-            )
-            if slug:
-                slugs.add(slug)
-        return slugs
 
     @staticmethod
     def _has_flag(

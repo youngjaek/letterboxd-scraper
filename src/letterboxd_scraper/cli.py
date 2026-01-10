@@ -26,6 +26,7 @@ from .services import workflows as workflow_service
 from .services.enrichment import enrich_film_metadata, film_needs_enrichment
 from .scrapers.film_pages import FilmPageScraper
 from .scrapers.person_pages import PersonPageScraper
+from .scrapers.ratings import ProfileRatingsScraper
 from .scrapers.follow_graph import FollowGraphScraper, expand_follow_graph
 from .scrapers.histograms import RatingsHistogramScraper
 from .scrapers.listings import PosterListingScraper
@@ -863,6 +864,37 @@ def user_sync_following(
         f"[green]Updated[/green] metadata for {updated} user(s) "
         f"from @{username}'s following list."
     )
+
+
+@user_app.command("favorites")
+def user_favorites(
+    ctx: typer.Context,
+    username: str = typer.Argument(..., help="Letterboxd username whose profile favorites will be fetched."),
+) -> None:
+    """Preview a user's four profile favorites without touching the database."""
+    settings = get_state(ctx)["settings"]
+    scraper = ProfileRatingsScraper(settings)
+    console.print(f"[cyan]Fetching[/cyan] @{username}'s profile favorites…")
+    try:
+        favorites = scraper.fetch_profile_favorites(username)
+    finally:
+        scraper.close()
+    if not favorites:
+        console.print(f"[yellow]No favorites found[/yellow] for @{username}.")
+        return
+    table = Table(title=f"@{username}'s favorites")
+    table.add_column("#", style="cyan", justify="right")
+    table.add_column("Title")
+    table.add_column("Slug")
+    table.add_column("Rating")
+    for idx, entry in enumerate(favorites, start=1):
+        rating_text = (
+            f"{entry.rating:.1f}"
+            if entry.rating is not None
+            else ("liked" if entry.liked else "unrated")
+        )
+        table.add_row(str(idx), entry.film_title, entry.film_slug, rating_text)
+    console.print(table)
 
 @cohort_app.command("list")
 def cohort_list(ctx: typer.Context) -> None:
