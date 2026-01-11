@@ -35,7 +35,7 @@ from .scrapers.listings import PosterListingScraper
 from .services.tmdb import TMDBClient, RequestRateLimiter
 
 console = Console()
-ERROR_LOG_PATH = Path("logs/enrich_failures.log")
+ERROR_LOG_PATH: Optional[Path] = None
 
 app = typer.Typer(
     help="Personalized Letterboxd scraper CLI.",
@@ -62,6 +62,8 @@ def get_state(ctx: typer.Context) -> Dict[str, Settings]:
 
 
 def _log_enrich_error(message: str) -> None:
+    if ERROR_LOG_PATH is None:
+        return
     try:
         ERROR_LOG_PATH.parent.mkdir(parents=True, exist_ok=True)
         with ERROR_LOG_PATH.open("a", encoding="utf-8") as fh:
@@ -402,6 +404,9 @@ def scrape_enrich(
 ) -> None:
     """Hydrate films with TMDB metadata and/or Letterboxd histograms."""
     settings = get_state(ctx)["settings"]
+    global ERROR_LOG_PATH
+    timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
+    ERROR_LOG_PATH = Path("logs") / f"enrich_failures_{timestamp}.log"
     if not include_tmdb and not include_histograms:
         typer.echo("Enable at least one of --tmdb or --histograms.")
         raise typer.Exit(code=1)

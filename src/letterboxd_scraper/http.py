@@ -23,7 +23,15 @@ class ThrottledClient:
         attempt = 0
         while True:
             self._throttle()
-            response = self.client.get(url)
+            try:
+                response = self.client.get(url)
+            except httpx.TimeoutException as exc:
+                if attempt >= self.settings.scraper.retry_limit:
+                    raise
+                attempt += 1
+                sleep_time = self.settings.scraper.retry_backoff_seconds * attempt
+                time.sleep(sleep_time)
+                continue
             if response.status_code in retry_on and attempt < self.settings.scraper.retry_limit:
                 attempt += 1
                 sleep_time = self.settings.scraper.retry_backoff_seconds * attempt
