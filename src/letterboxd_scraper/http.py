@@ -14,6 +14,7 @@ class ThrottledClient:
         self.client = httpx.Client(
             headers={"User-Agent": settings.scraper.user_agent},
             timeout=settings.scraper.request_timeout_seconds,
+            follow_redirects=True,
         )
         self._last_request_time: float = 0.0
 

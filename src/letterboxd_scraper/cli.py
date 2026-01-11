@@ -10,6 +10,7 @@ from typing import Any, Dict, List, Optional, Set
 import threading
 
 import typer
+from sqlalchemy import or_
 from rich.console import Console
 from rich.table import Table
 
@@ -34,6 +35,7 @@ from .scrapers.listings import PosterListingScraper
 from .services.tmdb import TMDBClient, RequestRateLimiter
 
 console = Console()
+ERROR_LOG_PATH = Path("logs/enrich_failures.log")
 
 app = typer.Typer(
     help="Personalized Letterboxd scraper CLI.",
@@ -57,6 +59,16 @@ app.add_typer(film_app, name="film")
 
 def get_state(ctx: typer.Context) -> Dict[str, Settings]:
     return ctx.ensure_object(dict)  # type: ignore[return-value]
+
+
+def _log_enrich_error(message: str) -> None:
+    try:
+        ERROR_LOG_PATH.parent.mkdir(parents=True, exist_ok=True)
+        with ERROR_LOG_PATH.open("a", encoding="utf-8") as fh:
+            timestamp = datetime.now(timezone.utc).isoformat()
+            fh.write(f"[{timestamp}] {message}\n")
+    except Exception:
+        pass
 
 
 def _scrape_user_ratings(
@@ -566,6 +578,7 @@ def scrape_enrich(
                     result = future.result()
                 except Exception as exc:  # pragma: no cover
                     console.print(f"[red]Enrichment failed[/red] {job.slug}: {exc}")
+                    _log_enrich_error(f"Enrichment failed {job.slug}: {exc}")
                     continue
                 if result.tmdb_success:
                     tmdb_calls += 1
@@ -575,6 +588,7 @@ def scrape_enrich(
                     console.print(
                         f"[red]TMDB failed[/red] {result.slug} ({result.tmdb_elapsed:.2f}s): {result.tmdb_error}"
                     )
+                    _log_enrich_error(f"TMDB failed {result.slug}: {result.tmdb_error}")
                 if result.histogram_success:
                     histogram_calls += 1
                     histogram_elapsed_total += result.histogram_elapsed
@@ -584,6 +598,7 @@ def scrape_enrich(
                         f"[red]Histogram failed[/red] {result.slug} "
                         f"({result.histogram_elapsed:.2f}s): {result.histogram_error}"
                     )
+                    _log_enrich_error(f"Histogram failed {result.slug}: {result.histogram_error}")
                 if result.touched:
                     processed += 1
     finally:
@@ -1065,10 +1080,17 @@ def film_sync_ids(
 ) -> None:
     """Fetch TMDB/IMDb identifiers from the Letterboxd film page and optionally update the DB."""
     settings = get_state(ctx)["settings"]
+    letterboxd_hint = None
+    existing_film_id = None
+    with get_session(settings) as session:
+        existing = session.query(models.Film).filter(models.Film.slug == slug).one_or_none()
+        if existing:
+            existing_film_id = existing.id
+            letterboxd_hint = existing.letterboxd_film_id
     scraper = FilmPageScraper(settings)
     console.print(f"[cyan]Fetching[/cyan] identifiers for '{slug}'…")
     try:
-        details = scraper.fetch(slug)
+        details = scraper.fetch(slug, letterboxd_id=letterboxd_hint)
     finally:
         scraper.close()
     table = Table(title=f"Identifiers for {details.slug}")
@@ -1085,7 +1107,16 @@ def film_sync_ids(
         console.print("[yellow]Dry run[/yellow]: pass --apply to persist these identifiers.")
         return
     with get_session(settings) as session:
-        film = session.query(models.Film).filter(models.Film.slug == slug).one_or_none()
+        filters = [models.Film.slug == slug]
+        if existing_film_id:
+            filters.append(models.Film.id == existing_film_id)
+        if details.slug and details.slug != slug:
+            filters.append(models.Film.slug == details.slug)
+        if details.letterboxd_film_id:
+            filters.append(models.Film.letterboxd_film_id == details.letterboxd_film_id)
+        if details.tmdb_id:
+            filters.append(models.Film.tmdb_id == details.tmdb_id)
+        film = session.query(models.Film).filter(or_(*filters)).first()
         if not film:
             console.print(f"[red]Film '{details.slug}' not found in the database.[/red]")
             raise typer.Exit(code=1)

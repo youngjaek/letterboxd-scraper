@@ -39,14 +39,24 @@ def enrich_film_metadata(
         season_number=film.tmdb_season_number,
         episode_number=film.tmdb_episode_number,
     )
-    page_details = film_page_scraper.fetch(film.slug) if film_page_scraper else None
+    page_details = (
+        film_page_scraper.fetch(film.slug, letterboxd_id=film.letterboxd_film_id)
+        if film_page_scraper
+        else None
+    )
     if page_details:
         if not candidate.tmdb_id and page_details.tmdb_id:
             candidate.tmdb_id = page_details.tmdb_id
         if not candidate.media_type and page_details.tmdb_media_type:
             candidate.media_type = page_details.tmdb_media_type
-        if not film.imdb_id and page_details.imdb_id:
+        if page_details.letterboxd_film_id and film.letterboxd_film_id != page_details.letterboxd_film_id:
+            film.letterboxd_film_id = page_details.letterboxd_film_id
+        if page_details.slug and film.slug != page_details.slug:
+            film.slug = page_details.slug
+        if page_details.imdb_id and film.imdb_id != page_details.imdb_id:
             film.imdb_id = page_details.imdb_id
+        if page_details.title and film.title != page_details.title:
+            film.title = page_details.title
         if not film.release_year and page_details.release_year:
             film.release_year = page_details.release_year
     imdb_id = film.imdb_id
@@ -59,7 +69,8 @@ def enrich_film_metadata(
     if payload is None:
         film.tmdb_payload = {"tmdb_not_found": True}
         return False
-    _apply_tmdb_payload(film, payload)
+    if not _apply_tmdb_payload(session, film, payload):
+        return False
     _sync_directors(session, film, credits)
     return True
 
@@ -111,7 +122,19 @@ def _fetch_tmdb_payload(
     return payload, credits
 
 
-def _apply_tmdb_payload(film: models.Film, payload: TMDBMediaPayload) -> None:
+def _apply_tmdb_payload(session: Session, film: models.Film, payload: TMDBMediaPayload) -> bool:
+    if payload.tmdb_id:
+        conflict = (
+            session.query(models.Film.id)
+            .filter(
+                models.Film.tmdb_id == payload.tmdb_id,
+                models.Film.tmdb_media_type == payload.media_type,
+                models.Film.id != film.id,
+            )
+            .first()
+        )
+        if conflict:
+            return False
     film.tmdb_id = payload.tmdb_id
     film.tmdb_media_type = payload.media_type
     if payload.show_id:
@@ -146,6 +169,7 @@ def _apply_tmdb_payload(film: models.Film, payload: TMDBMediaPayload) -> None:
         film.genres = payload.genres
     film.tmdb_payload = dict(payload.raw or {})
     film.tmdb_payload["media_type"] = payload.media_type
+    return True
 
 
 def _sync_directors(

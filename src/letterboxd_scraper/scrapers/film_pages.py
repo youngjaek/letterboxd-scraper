@@ -43,15 +43,19 @@ class FilmPageScraper:
         self.client = ThrottledClient(settings)
         self._cache: Dict[str, FilmPageDetails] = {}
 
-    def fetch(self, slug: str) -> FilmPageDetails:
-        requested_slug = slug.strip().strip("/")
-        cached = self._cache.get(requested_slug)
+    def fetch(self, slug: str, *, letterboxd_id: Optional[int] = None) -> FilmPageDetails:
+        normalized_slug = slug.strip().strip("/")
+        cache_key = f"id:{letterboxd_id}" if letterboxd_id else f"slug:{normalized_slug}"
+        cached = self._cache.get(cache_key)
         if cached:
             return cached
-        url = f"https://letterboxd.com/film/{requested_slug}/"
+        if letterboxd_id:
+            url = f"https://letterboxd.com/film/film:{letterboxd_id}/"
+        else:
+            url = f"https://letterboxd.com/film/{normalized_slug}/"
         response = self.client.get(url)
         soup = parse_html_document(response.text)
-        canonical_slug = self._extract_canonical_slug(response) or requested_slug
+        canonical_slug = self._extract_canonical_slug(response) or normalized_slug
         tmdb_id, tmdb_media_type = self._extract_tmdb_reference(soup)
         details = FilmPageDetails(
             slug=canonical_slug,
@@ -67,8 +71,10 @@ class FilmPageScraper:
             directors=self._extract_directors(soup),
             tmdb_media_type=tmdb_media_type,
         )
-        self._cache[requested_slug] = details
-        self._cache[canonical_slug] = details
+        self._cache[cache_key] = details
+        self._cache[f"slug:{canonical_slug}"] = details
+        if details.letterboxd_film_id:
+            self._cache[f"id:{details.letterboxd_film_id}"] = details
         return details
 
     def close(self) -> None:
