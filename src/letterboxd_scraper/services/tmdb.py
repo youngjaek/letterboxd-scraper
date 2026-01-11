@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import date
 from typing import Any, Dict, List, Optional, Tuple
+import threading
 import time
 
 import httpx
@@ -35,6 +36,25 @@ class TMDBMediaPayload:
     raw: Dict[str, Any]
 
 
+class RequestRateLimiter:
+    """Simple thread-safe rate limiter enforcing max requests per second."""
+
+    def __init__(self, max_per_second: float) -> None:
+        self._interval = 1.0 / max_per_second if max_per_second > 0 else 0.0
+        self._lock = threading.Lock()
+        self._last_request = 0.0
+
+    def acquire(self) -> None:
+        if self._interval <= 0:
+            return
+        with self._lock:
+            now = time.time()
+            wait_for = self._interval - (now - self._last_request)
+            if wait_for > 0:
+                time.sleep(wait_for)
+            self._last_request = time.time()
+
+
 class TMDBClient:
     """Thin wrapper around TMDB movie + credits endpoints with lightweight caching."""
 
@@ -44,6 +64,7 @@ class TMDBClient:
         *,
         http_client: Optional[httpx.Client] = None,
         cache_ttl_seconds: int = 3600,
+        rate_limiter: Optional[RequestRateLimiter] = None,
     ) -> None:
         if not settings.tmdb.api_key:
             raise ValueError("TMDB API key is not configured.")
@@ -54,6 +75,7 @@ class TMDBClient:
         self._client = http_client or httpx.Client(timeout=timeout)
         self._cache_ttl = cache_ttl_seconds
         self._cache: Dict[str, Tuple[float, Dict[str, Any]]] = {}
+        self._rate_limiter = rate_limiter
 
     def fetch_movie(self, tmdb_id: int) -> TMDBMediaPayload:
         return self._fetch_media_payload(tmdb_id, media_type="movie")
@@ -94,6 +116,8 @@ class TMDBClient:
         if cached and (time.time() - cached[0]) < self._cache_ttl:
             return cached[1]
         url = f"{self.base_url}{path}"
+        if self._rate_limiter:
+            self._rate_limiter.acquire()
         response = self._client.get(url, params=params)
         if response.status_code == 404:
             self._cache[cache_key] = (time.time(), {})

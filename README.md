@@ -38,7 +38,7 @@ The Typer CLI surfaces each workflow step. Commands are grouped by workflow so y
 ### Scraping + stats commands
 
 - `letterboxd-scraper scrape <cohort_id> [--user username] [--full] [--print-only]` — default scraper. Runs incremental “when rated” updates for members who were previously scraped, and automatically falls back to a full historical scrape for brand-new members. Pass `--full` to force a full crawl for all targeted users, or `--print-only` to preview what would be fetched without touching the database.
-- `letterboxd-scraper enrich [--tmdb/--no-tmdb] [--histograms/--no-histograms] [--limit N] [--slug film-slug]` — second pass that hydrates touched films with TMDB metadata (IDs, runtime, poster, directors) and Letterboxd histogram stats from `/csi/film/{slug}/ratings-summary/`. Use `--slug` when only one film needs an enrichment retry.
+- `letterboxd-scraper enrich [--tmdb/--no-tmdb] [--histograms/--no-histograms] [--limit N] [--slug film-slug] [--workers N] [--tmdb-rps X]` — second pass that hydrates touched films with TMDB metadata (IDs, runtime, poster, directors) and Letterboxd histogram stats from `/csi/film/{slug}/ratings-summary/`. Workers default to `scraper.max_concurrency` from your config, and TMDB requests are throttled globally (default `--tmdb-rps 10`). Use `--slug` when only one film needs an enrichment retry.
 - `letterboxd-scraper stats refresh [--concurrent/--no-concurrent]` — rebuild the `cohort_film_stats` materialized view (now only counting rows where `rating IS NOT NULL`).
 
 ### User metadata commands

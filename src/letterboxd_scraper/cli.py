@@ -3,9 +3,11 @@ from __future__ import annotations
 from collections import Counter
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timezone
+from dataclasses import dataclass
 from pathlib import Path
 from time import perf_counter
-from typing import Any, Dict, Optional, Set
+from typing import Any, Dict, List, Optional, Set
+import threading
 
 import typer
 from rich.console import Console
@@ -30,7 +32,7 @@ from .scrapers.ratings import ProfileRatingsScraper
 from .scrapers.follow_graph import FollowGraphScraper, expand_follow_graph
 from .scrapers.histograms import RatingsHistogramScraper
 from .scrapers.listings import PosterListingScraper
-from .services.tmdb import TMDBClient
+from .services.tmdb import TMDBClient, RequestRateLimiter
 
 console = Console()
 
@@ -368,6 +370,17 @@ def scrape_enrich(
     include_histograms: bool = typer.Option(
         True, "--histograms/--no-histograms", help="Refresh Letterboxd histogram stats."
     ),
+    workers: Optional[int] = typer.Option(
+        None,
+        "--workers",
+        "-w",
+        help="Number of parallel enrichment workers (defaults to scraper.max_concurrency).",
+    ),
+    tmdb_rps: float = typer.Option(
+        10.0,
+        "--tmdb-rps",
+        help="Global TMDB request cap (requests per second).",
+    ),
 ) -> None:
     """Hydrate films with TMDB metadata and/or Letterboxd histograms."""
     settings = get_state(ctx)["settings"]
@@ -377,90 +390,204 @@ def scrape_enrich(
     if include_tmdb and not settings.tmdb.api_key:
         console.print("[yellow]TMDB API key not configured[/yellow]; skipping TMDB enrichment.")
         include_tmdb = False
-    tmdb_client = None
-    film_page_scraper = None
-    person_page_scraper = None
-    histogram_scraper: Optional[RatingsHistogramScraper] = None
-    if include_tmdb and settings.tmdb.api_key:
-        tmdb_client = TMDBClient(settings)
-        film_page_scraper = FilmPageScraper(settings)
-        person_page_scraper = PersonPageScraper(settings)
-    if include_histograms:
-        histogram_scraper = RatingsHistogramScraper(settings)
+    tmdb_enabled = include_tmdb and bool(settings.tmdb.api_key)
+    worker_count = workers or settings.scraper.max_concurrency
+    worker_count = max(1, worker_count)
+
+    @dataclass
+    class EnrichmentJob:
+        film_id: int
+        slug: str
+        needs_tmdb: bool
+        needs_histogram: bool
+
+    @dataclass
+    class EnrichmentResultRow:
+        slug: str
+        tmdb_success: bool
+        tmdb_elapsed: float
+        tmdb_error: Optional[str]
+        histogram_success: bool
+        histogram_elapsed: float
+        histogram_error: Optional[str]
+        touched: bool
+
+    @dataclass
+    class WorkerResources:
+        tmdb_client: Optional[TMDBClient] = None
+        film_page_scraper: Optional[FilmPageScraper] = None
+        person_page_scraper: Optional[PersonPageScraper] = None
+        histogram_scraper: Optional[RatingsHistogramScraper] = None
+
+        def close(self) -> None:
+            if self.tmdb_client:
+                self.tmdb_client.close()
+            if self.film_page_scraper:
+                self.film_page_scraper.close()
+            if self.person_page_scraper:
+                self.person_page_scraper.close()
+            if self.histogram_scraper:
+                self.histogram_scraper.close()
+
+    worker_local = threading.local()
+    worker_resources: List[WorkerResources] = []
+    worker_lock = threading.Lock()
+    tmdb_rate_limiter = RequestRateLimiter(tmdb_rps) if tmdb_enabled and tmdb_rps > 0 else None
+
+    def _get_worker_resources() -> WorkerResources:
+        ctx = getattr(worker_local, "ctx", None)
+        if ctx is None:
+            ctx = WorkerResources()
+            if tmdb_enabled:
+                ctx.tmdb_client = TMDBClient(settings, rate_limiter=tmdb_rate_limiter)
+                ctx.film_page_scraper = FilmPageScraper(settings)
+                ctx.person_page_scraper = PersonPageScraper(settings)
+            if include_histograms:
+                ctx.histogram_scraper = RatingsHistogramScraper(settings)
+            setattr(worker_local, "ctx", ctx)
+            with worker_lock:
+                worker_resources.append(ctx)
+        return ctx
+
+    def _close_worker_resources() -> None:
+        with worker_lock:
+            for ctx in worker_resources:
+                ctx.close()
+            worker_resources.clear()
+
+    def _process_job(job: EnrichmentJob) -> EnrichmentResultRow:
+        ctx = _get_worker_resources()
+        tmdb_elapsed = 0.0
+        histogram_elapsed = 0.0
+        tmdb_success = False
+        histogram_success = False
+        tmdb_error = None
+        histogram_error = None
+        touched = False
+        with get_session(settings) as session:
+            film = session.get(
+                models.Film,
+                job.film_id,
+            )
+            if not film:
+                return EnrichmentResultRow(
+                    slug=job.slug,
+                    tmdb_success=False,
+                    tmdb_elapsed=0.0,
+                    tmdb_error="missing film",
+                    histogram_success=False,
+                    histogram_elapsed=0.0,
+                    histogram_error=None,
+                    touched=False,
+                )
+            if job.needs_tmdb and ctx.tmdb_client:
+                tmdb_start = perf_counter()
+                try:
+                    tmdb_success = enrich_film_metadata(
+                        session,
+                        film,
+                        client=ctx.tmdb_client,
+                        film_page_scraper=ctx.film_page_scraper,
+                        person_page_scraper=ctx.person_page_scraper,
+                    )
+                except Exception as exc:  # pragma: no cover - defensive log
+                    tmdb_error = str(exc)
+                else:
+                    touched = touched or tmdb_success
+                finally:
+                    tmdb_elapsed = perf_counter() - tmdb_start
+            if job.needs_histogram and ctx.histogram_scraper:
+                histogram_start = perf_counter()
+                try:
+                    summary = ctx.histogram_scraper.fetch(film.slug)
+                    histogram_service.upsert_global_histogram(session, film, summary)
+                    histogram_success = True
+                    touched = True
+                except Exception as exc:  # pragma: no cover
+                    histogram_error = str(exc)
+                finally:
+                    histogram_elapsed = perf_counter() - histogram_start
+            if touched:
+                session.flush()
+        return EnrichmentResultRow(
+            slug=job.slug,
+            tmdb_success=tmdb_success,
+            tmdb_elapsed=tmdb_elapsed,
+            tmdb_error=tmdb_error,
+            histogram_success=histogram_success,
+            histogram_elapsed=histogram_elapsed,
+            histogram_error=histogram_error,
+            touched=touched,
+        )
+
+    jobs: List[EnrichmentJob] = []
+    force_enrich = bool(slug)
+    with get_session(settings) as session:
+        query = session.query(models.Film).order_by(models.Film.id)
+        if slug:
+            query = query.filter(models.Film.slug == slug)
+        films = query.all()
+        if slug and not films:
+            console.print(f"[red]Film '{slug}' not found.[/red]")
+            raise typer.Exit(code=1)
+        for film in films:
+            needs_tmdb = tmdb_enabled and (force_enrich or film_needs_enrichment(film))
+            needs_histogram = include_histograms and histogram_service.film_needs_histogram(film)
+            if not (needs_tmdb or needs_histogram):
+                continue
+            jobs.append(
+                EnrichmentJob(
+                    film_id=film.id,
+                    slug=film.slug,
+                    needs_tmdb=needs_tmdb,
+                    needs_histogram=needs_histogram,
+                )
+            )
+            if limit and len(jobs) >= limit:
+                break
+    if not jobs:
+        console.print("[yellow]No films required enrichment.[/yellow]")
+        return
+    worker_count = min(worker_count, len(jobs))
     processed = 0
-    tmdb_elapsed_total = 0.0
-    histogram_elapsed_total = 0.0
     tmdb_calls = 0
     histogram_calls = 0
+    tmdb_elapsed_total = 0.0
+    histogram_elapsed_total = 0.0
     try:
-        with get_session(settings) as session:
-            if slug:
-                film = session.query(models.Film).filter(models.Film.slug == slug).one_or_none()
-                if not film:
-                    console.print(f"[red]Film '{slug}' not found.[/red]")
-                    raise typer.Exit(code=1)
-                films = [film]
-            else:
-                films = session.query(models.Film).order_by(models.Film.id).all()
-            for film in films:
-                touched = False
-                force_enrich = bool(slug)
-                run_tmdb = include_tmdb and tmdb_client and (force_enrich or film_needs_enrichment(film))
-                if run_tmdb:
-                    tmdb_start = perf_counter()
-                    try:
-                        success = enrich_film_metadata(
-                            session,
-                            film,
-                            client=tmdb_client,
-                            film_page_scraper=film_page_scraper,
-                            person_page_scraper=person_page_scraper,
-                        )
-                        if success:
-                            elapsed = perf_counter() - tmdb_start
-                            tmdb_calls += 1
-                            tmdb_elapsed_total += elapsed
-                            console.print(
-                                f"[green]TMDB[/green] {film.slug} ({elapsed:.2f}s)"
-                            )
-                        touched = touched or success
-                    except Exception as exc:  # pragma: no cover - safety log
-                        elapsed = perf_counter() - tmdb_start
-                        console.print(
-                            f"[red]TMDB failed[/red] {film.slug} ({elapsed:.2f}s): {exc}"
-                        )
-                if include_histograms and histogram_scraper and histogram_service.film_needs_histogram(film):
-                    histogram_start = perf_counter()
-                    try:
-                        summary = histogram_scraper.fetch(film.slug)
-                        histogram_service.upsert_global_histogram(session, film, summary)
-                        elapsed = perf_counter() - histogram_start
-                        histogram_calls += 1
-                        histogram_elapsed_total += elapsed
-                        console.print(
-                            f"[cyan]Histogram[/cyan] {film.slug} ({elapsed:.2f}s)"
-                        )
-                        touched = True
-                    except Exception as exc:  # pragma: no cover
-                        elapsed = perf_counter() - histogram_start
-                        console.print(
-                            f"[red]Histogram failed[/red] {film.slug} ({elapsed:.2f}s): {exc}"
-                        )
-                if touched:
+        with ThreadPoolExecutor(max_workers=worker_count) as executor:
+            future_map = {
+                executor.submit(_process_job, job): job for job in jobs
+            }
+            for future in as_completed(future_map):
+                job = future_map[future]
+                try:
+                    result = future.result()
+                except Exception as exc:  # pragma: no cover
+                    console.print(f"[red]Enrichment failed[/red] {job.slug}: {exc}")
+                    continue
+                if result.tmdb_success:
+                    tmdb_calls += 1
+                    tmdb_elapsed_total += result.tmdb_elapsed
+                    console.print(f"[green]TMDB[/green] {result.slug} ({result.tmdb_elapsed:.2f}s)")
+                elif job.needs_tmdb and result.tmdb_error:
+                    console.print(
+                        f"[red]TMDB failed[/red] {result.slug} ({result.tmdb_elapsed:.2f}s): {result.tmdb_error}"
+                    )
+                if result.histogram_success:
+                    histogram_calls += 1
+                    histogram_elapsed_total += result.histogram_elapsed
+                    console.print(f"[cyan]Histogram[/cyan] {result.slug} ({result.histogram_elapsed:.2f}s)")
+                elif job.needs_histogram and result.histogram_error:
+                    console.print(
+                        f"[red]Histogram failed[/red] {result.slug} "
+                        f"({result.histogram_elapsed:.2f}s): {result.histogram_error}"
+                    )
+                if result.touched:
                     processed += 1
-                    session.flush()
-                    if limit and processed >= limit:
-                        break
     finally:
-        if film_page_scraper:
-            film_page_scraper.close()
-        if person_page_scraper:
-            person_page_scraper.close()
-        if tmdb_client:
-            tmdb_client.close()
-        if histogram_scraper:
-            histogram_scraper.close()
-    console.print(f"[green]Enrichment complete[/green]; processed {processed} films.")
+        _close_worker_resources()
+    console.print(f"[green]Enrichment complete[/green]; processed {processed} film(s).")
     if tmdb_calls:
         avg_tmdb = tmdb_elapsed_total / tmdb_calls
         console.print(
