@@ -46,12 +46,14 @@ stats_app = typer.Typer(help="Statistics/materialized view maintenance.", no_arg
 rank_app = typer.Typer(help="Ranking computations.", no_args_is_help=True)
 export_app = typer.Typer(help="Export data into consumable formats.")
 user_app = typer.Typer(help="User metadata utilities.", no_args_is_help=True)
+film_app = typer.Typer(help="Film metadata helpers.", no_args_is_help=True)
 
 app.add_typer(cohort_app, name="cohort")
 app.add_typer(stats_app, name="stats")
 app.add_typer(rank_app, name="rank")
 app.add_typer(export_app, name="export")
 app.add_typer(user_app, name="user")
+app.add_typer(film_app, name="film")
 
 
 def get_state(ctx: typer.Context) -> Dict[str, Settings]:
@@ -1023,6 +1025,31 @@ def user_favorites(
         table.add_row(str(idx), entry.film_title, entry.film_slug, rating_text)
     console.print(table)
 
+
+@film_app.command("ids")
+def film_ids(
+    ctx: typer.Context,
+    slug: str = typer.Argument(..., help="Letterboxd film slug."),
+) -> None:
+    """Print TMDB + IMDb identifiers discovered from the film page buttons."""
+    settings = get_state(ctx)["settings"]
+    scraper = FilmPageScraper(settings)
+    console.print(f"[cyan]Fetching[/cyan] metadata for film '{slug}'…")
+    try:
+        details = scraper.fetch(slug)
+    finally:
+        scraper.close()
+    if not details:
+        console.print(f"[red]Failed[/red] to fetch metadata for '{slug}'.")
+        raise typer.Exit(code=1)
+    table = Table(title=f"Identifiers for {details.slug}")
+    table.add_column("Field", style="cyan")
+    table.add_column("Value")
+    table.add_row("TMDB ID", str(details.tmdb_id or ""))
+    table.add_row("TMDB media type", details.tmdb_media_type or "")
+    table.add_row("IMDb ID", details.imdb_id or "")
+    table.add_row("Letterboxd film id", str(details.letterboxd_film_id or ""))
+    console.print(table)
 @cohort_app.command("list")
 def cohort_list(ctx: typer.Context) -> None:
     """List existing cohorts."""
