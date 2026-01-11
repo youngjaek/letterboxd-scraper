@@ -9,8 +9,10 @@ from time import perf_counter
 from typing import Any, Dict, List, Optional, Set
 import threading
 
+import httpx
+import re
 import typer
-from sqlalchemy import or_
+from sqlalchemy import func, or_
 from rich.console import Console
 from rich.table import Table
 
@@ -48,6 +50,7 @@ rank_app = typer.Typer(help="Ranking computations.", no_args_is_help=True)
 export_app = typer.Typer(help="Export data into consumable formats.")
 user_app = typer.Typer(help="User metadata utilities.", no_args_is_help=True)
 film_app = typer.Typer(help="Film metadata helpers.", no_args_is_help=True)
+cleanup_app = typer.Typer(help="Data cleanup utilities.", no_args_is_help=True)
 
 app.add_typer(cohort_app, name="cohort")
 app.add_typer(stats_app, name="stats")
@@ -55,6 +58,7 @@ app.add_typer(rank_app, name="rank")
 app.add_typer(export_app, name="export")
 app.add_typer(user_app, name="user")
 app.add_typer(film_app, name="film")
+app.add_typer(cleanup_app, name="cleanup")
 
 
 def get_state(ctx: typer.Context) -> Dict[str, Settings]:
@@ -1168,3 +1172,149 @@ def cohort_list(ctx: typer.Context) -> None:
 
 if __name__ == "__main__":  # pragma: no cover
     app()
+@cleanup_app.command("dedupe-films")
+def cleanup_dedupe_films(
+    ctx: typer.Context,
+    fix_samples: bool = typer.Option(False, "--fix-samples", help="Auto-merge known renamed films."),
+    prune_orphans: bool = typer.Option(True, "--prune-orphans/--keep-orphans", help="Delete films that no longer exist on Letterboxd."),
+    log: Optional[Path] = typer.Option(None, "--log", help="Only process slugs listed in the given error log."),
+) -> None:
+    """Fix duplicate slugs/letterboxd IDs and remove 404 films."""
+    settings = get_state(ctx)["settings"]
+    scraper = FilmPageScraper(settings)
+    deleted = 0
+    merged = 0
+    errors: list[str] = []
+    slug_filter: Optional[set[str]] = None
+    slug_pairs: dict[str, str] = {}
+    orphan_ids: set[int] = set()
+    if log:
+        slug_filter = set()
+        for line in log.read_text(encoding="utf-8").splitlines():
+            match = re.search(r"\] Enrichment failed ([^:]+):", line)
+            if match:
+                current = match.group(1).strip()
+                slug_filter.add(current)
+                slug_pairs.setdefault(current, "")
+                continue
+            match = re.search(r"Key \(slug\)=\(([^)]+)\)", line)
+            if match and slug_pairs:
+                canonical = match.group(1).strip()
+                for orig, dest in list(slug_pairs.items()):
+                    if not dest:
+                        slug_pairs[orig] = canonical
+                        slug_filter.add(canonical)
+                        break
+            match = re.search(r"film:([0-9]+)", line)
+            if match and "404 Not Found" in line:
+                orphan_ids.add(int(match.group(1)))
+        if slug_filter:
+            console.print(f"[cyan]Restricting cleanup to[/cyan] {len(slug_filter)} slug(s) from {log}")
+
+    def _merge_into(session: Session, primary: models.Film, duplicate: models.Film) -> None:
+        nonlocal merged
+        if primary.id == duplicate.id:
+            return
+        dup_ratings = session.query(models.Rating).filter(models.Rating.film_id == duplicate.id).all()
+        for rating in dup_ratings:
+            existing = (
+                session.query(models.Rating)
+                .filter(models.Rating.film_id == primary.id, models.Rating.user_id == rating.user_id)
+                .one_or_none()
+            )
+            if existing:
+                session.delete(rating)
+            else:
+                rating.film_id = primary.id
+        session.query(models.FilmPerson).filter(models.FilmPerson.film_id == duplicate.id).delete()
+        session.query(models.FilmHistogram).filter(models.FilmHistogram.film_id == duplicate.id).delete()
+        session.delete(duplicate)
+        merged += 1
+
+    try:
+        with get_session(settings) as session:
+            for orig_slug, canonical_slug in slug_pairs.items():
+                duplicate = session.query(models.Film).filter(models.Film.slug == orig_slug).one_or_none()
+                primary = (
+                    session.query(models.Film).filter(models.Film.slug == canonical_slug).one_or_none()
+                    if canonical_slug else None
+                )
+                if duplicate and primary:
+                    console.print(f"[yellow]Merging logged slug[/yellow]: {duplicate.slug} -> {primary.slug}")
+                    _merge_into(session, primary, duplicate)
+                elif duplicate and canonical_slug and not primary:
+                    console.print(f"[cyan]Renaming[/cyan] {duplicate.slug} -> {canonical_slug}")
+                    duplicate.slug = canonical_slug
+
+            slug_conflicts = (
+                session.query(models.Film.slug)
+                .group_by(models.Film.slug)
+                .having(func.count(models.Film.id) > 1)
+                .all()
+            )
+            for (slug,) in slug_conflicts:
+                if slug_filter and slug not in slug_filter:
+                    continue
+                films = session.query(models.Film).filter(models.Film.slug == slug).order_by(models.Film.id).all()
+                if len(films) < 2:
+                    continue
+                primary = films[0]
+                for dup in films[1:]:
+                    console.print(f"[yellow]Merging slug duplicate[/yellow]: {dup.slug} -> {primary.slug}")
+                    _merge_into(session, primary, dup)
+
+            id_conflicts = (
+                session.query(models.Film.letterboxd_film_id)
+                .filter(models.Film.letterboxd_film_id.isnot(None))
+                .group_by(models.Film.letterboxd_film_id)
+                .having(func.count(models.Film.id) > 1)
+                .all()
+            )
+            for (lb_id,) in id_conflicts:
+                films = session.query(models.Film).filter(models.Film.letterboxd_film_id == lb_id).order_by(models.Film.id).all()
+                if slug_filter and not any(f.slug in slug_filter for f in films):
+                    continue
+                primary = films[0]
+                for dup in films[1:]:
+                    console.print(f"[yellow]Merging Letterboxd ID duplicate[/yellow]: {dup.slug} -> {primary.slug}")
+                    _merge_into(session, primary, dup)
+            session.flush()
+    except Exception as exc:
+        errors.append(f"Failed to merge duplicates: {exc}")
+
+    try:
+        with get_session(settings) as session:
+            query = session.query(models.Film.id, models.Film.slug, models.Film.letterboxd_film_id)
+            if slug_filter:
+                query = query.filter(models.Film.slug.in_(slug_filter))
+            films = query.all()
+        for film_id, slug, lb_id in films:
+            hint = lb_id
+            if fix_samples and hint:
+                try:
+                    scraper.fetch(slug, letterboxd_id=hint)
+                except httpx.HTTPStatusError as exc:
+                    if exc.response.status_code == 404 and prune_orphans:
+                        with get_session(settings) as session:
+                            film = session.get(models.Film, film_id)
+                            if film:
+                                console.print(f"[yellow]Deleting orphan[/yellow] {slug} (letterboxd id={lb_id})")
+                                session.delete(film)
+                                deleted += 1
+                    else:
+                        errors.append(f"{slug}: {exc}")
+        if orphan_ids and prune_orphans:
+            with get_session(settings) as session:
+                to_delete = session.query(models.Film).filter(models.Film.letterboxd_film_id.in_(list(orphan_ids))).all()
+                for film in to_delete:
+                    console.print(f"[yellow]Deleting orphan[/yellow] {film.slug} (letterboxd id={film.letterboxd_film_id})")
+                    session.delete(film)
+                    deleted += 1
+    except Exception as exc:
+        errors.append(f"Failed to prune orphaned films: {exc}")
+    console.print(f"[green]Merged duplicates[/green]: {merged}, [red]Deleted orphans[/red]: {deleted}")
+    if errors:
+        console.print("[red]Errors:[/red]")
+        for err in errors:
+            console.print(f"  - {err}")
+    scraper.close()
