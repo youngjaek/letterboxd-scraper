@@ -20,7 +20,11 @@ CREATE TABLE IF NOT EXISTS films (
     letterboxd_weighted_average NUMERIC(4, 2),
     release_year INT,
     release_date DATE,
-    tmdb_id INT UNIQUE,
+    tmdb_id INT,
+    tmdb_media_type TEXT,
+    tmdb_show_id INT,
+    tmdb_season_number INT,
+    tmdb_episode_number INT,
     imdb_id TEXT,
     runtime_minutes INT,
     poster_url TEXT,
@@ -30,6 +34,8 @@ CREATE TABLE IF NOT EXISTS films (
     tmdb_payload JSONB,
     created_at TIMESTAMPTZ DEFAULT NOW()
 );
+
+CREATE UNIQUE INDEX IF NOT EXISTS films_tmdb_media_key ON films (tmdb_id, tmdb_media_type) WHERE tmdb_id IS NOT NULL AND tmdb_media_type IS NOT NULL;
 
 CREATE TABLE IF NOT EXISTS ratings (
     user_id INT REFERENCES users(id) ON DELETE CASCADE,

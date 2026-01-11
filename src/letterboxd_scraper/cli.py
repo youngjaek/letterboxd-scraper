@@ -27,7 +27,6 @@ from .services import telemetry as telemetry_service
 from .services import workflows as workflow_service
 from .services.enrichment import enrich_film_metadata, film_needs_enrichment
 from .scrapers.film_pages import FilmPageScraper
-from .scrapers.person_pages import PersonPageScraper
 from .scrapers.ratings import ProfileRatingsScraper
 from .scrapers.follow_graph import FollowGraphScraper, expand_follow_graph
 from .scrapers.histograms import RatingsHistogramScraper
@@ -383,6 +382,11 @@ def scrape_enrich(
         "--tmdb-rps",
         help="Global TMDB request cap (requests per second).",
     ),
+    force: bool = typer.Option(
+        False,
+        "--force",
+        help="Refresh metadata even if it already exists.",
+    ),
 ) -> None:
     """Hydrate films with TMDB metadata and/or Letterboxd histograms."""
     settings = get_state(ctx)["settings"]
@@ -418,7 +422,6 @@ def scrape_enrich(
     class WorkerResources:
         tmdb_client: Optional[TMDBClient] = None
         film_page_scraper: Optional[FilmPageScraper] = None
-        person_page_scraper: Optional[PersonPageScraper] = None
         histogram_scraper: Optional[RatingsHistogramScraper] = None
 
         def close(self) -> None:
@@ -426,8 +429,6 @@ def scrape_enrich(
                 self.tmdb_client.close()
             if self.film_page_scraper:
                 self.film_page_scraper.close()
-            if self.person_page_scraper:
-                self.person_page_scraper.close()
             if self.histogram_scraper:
                 self.histogram_scraper.close()
 
@@ -443,7 +444,6 @@ def scrape_enrich(
             if tmdb_enabled:
                 ctx.tmdb_client = TMDBClient(settings, rate_limiter=tmdb_rate_limiter)
                 ctx.film_page_scraper = FilmPageScraper(settings)
-                ctx.person_page_scraper = PersonPageScraper(settings)
             if include_histograms:
                 ctx.histogram_scraper = RatingsHistogramScraper(settings)
             setattr(worker_local, "ctx", ctx)
@@ -490,7 +490,6 @@ def scrape_enrich(
                         film,
                         client=ctx.tmdb_client,
                         film_page_scraper=ctx.film_page_scraper,
-                        person_page_scraper=ctx.person_page_scraper,
                     )
                 except Exception as exc:  # pragma: no cover - defensive log
                     tmdb_error = str(exc)
@@ -523,7 +522,7 @@ def scrape_enrich(
         )
 
     jobs: List[EnrichmentJob] = []
-    force_enrich = bool(slug)
+    force_enrich = bool(slug) or force
     with get_session(settings) as session:
         query = session.query(models.Film).order_by(models.Film.id)
         if slug:
@@ -534,7 +533,7 @@ def scrape_enrich(
             raise typer.Exit(code=1)
         for film in films:
             needs_tmdb = tmdb_enabled and (force_enrich or film_needs_enrichment(film))
-            needs_histogram = include_histograms and histogram_service.film_needs_histogram(film)
+            needs_histogram = include_histograms and (force_enrich or histogram_service.film_needs_histogram(film))
             if not (needs_tmdb or needs_histogram):
                 continue
             jobs.append(
@@ -1045,11 +1044,76 @@ def film_ids(
     table = Table(title=f"Identifiers for {details.slug}")
     table.add_column("Field", style="cyan")
     table.add_column("Value")
+    table.add_row("Title", details.title or "")
+    table.add_row("Canonical slug", details.slug)
     table.add_row("TMDB ID", str(details.tmdb_id or ""))
     table.add_row("TMDB media type", details.tmdb_media_type or "")
     table.add_row("IMDb ID", details.imdb_id or "")
     table.add_row("Letterboxd film id", str(details.letterboxd_film_id or ""))
     console.print(table)
+
+
+@film_app.command("sync-ids")
+def film_sync_ids(
+    ctx: typer.Context,
+    slug: str = typer.Argument(..., help="Letterboxd film slug."),
+    apply: bool = typer.Option(
+        False,
+        "--apply/--no-apply",
+        help="Persist the scraped TMDB/IMDb identifiers to the database.",
+    ),
+) -> None:
+    """Fetch TMDB/IMDb identifiers from the Letterboxd film page and optionally update the DB."""
+    settings = get_state(ctx)["settings"]
+    scraper = FilmPageScraper(settings)
+    console.print(f"[cyan]Fetching[/cyan] identifiers for '{slug}'…")
+    try:
+        details = scraper.fetch(slug)
+    finally:
+        scraper.close()
+    table = Table(title=f"Identifiers for {details.slug}")
+    table.add_column("Field", style="cyan")
+    table.add_column("Value")
+    table.add_row("Title", details.title or "")
+    table.add_row("Canonical slug", details.slug)
+    table.add_row("TMDB ID", str(details.tmdb_id or ""))
+    table.add_row("TMDB media type", details.tmdb_media_type or "")
+    table.add_row("IMDb ID", details.imdb_id or "")
+    table.add_row("Letterboxd film id", str(details.letterboxd_film_id or ""))
+    console.print(table)
+    if not apply:
+        console.print("[yellow]Dry run[/yellow]: pass --apply to persist these identifiers.")
+        return
+    with get_session(settings) as session:
+        film = session.query(models.Film).filter(models.Film.slug == slug).one_or_none()
+        if not film:
+            console.print(f"[red]Film '{details.slug}' not found in the database.[/red]")
+            raise typer.Exit(code=1)
+        changes = []
+        if film.slug != details.slug:
+            film.slug = details.slug
+            changes.append("slug")
+        if details.title and film.title != details.title:
+            film.title = details.title
+            changes.append("title")
+        for attr, value in (
+            ("tmdb_id", details.tmdb_id),
+            ("tmdb_media_type", details.tmdb_media_type),
+            ("imdb_id", details.imdb_id),
+            ("letterboxd_film_id", details.letterboxd_film_id),
+        ):
+            if getattr(film, attr) != value and value is not None:
+                setattr(film, attr, value)
+                changes.append(attr)
+        # reset episode-specific fields; they'll be re-populated on next enrichment
+        film.tmdb_show_id = None
+        film.tmdb_season_number = None
+        film.tmdb_episode_number = None
+        session.flush()
+    if changes:
+        console.print(f"[green]Updated[/green] {', '.join(changes)} for '{details.slug}'.")
+    else:
+        console.print("[yellow]No changes[/yellow]; existing identifiers already match.")
 @cohort_app.command("list")
 def cohort_list(ctx: typer.Context) -> None:
     """List existing cohorts."""

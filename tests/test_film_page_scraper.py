@@ -27,7 +27,7 @@ def test_film_page_scraper_parses_ids(monkeypatch):
     scraper = FilmPageScraper(settings)
     html = """
     <html>
-        <body data-tmdb-id="1234" data-film-id="5678">
+        <body data-tmdb-id="1234" data-tmdb-type="movie" data-film-id="5678">
             <meta property="og:image" content="https://image.example/poster.jpg" />
             <meta property="og:description" content="Sample synopsis" />
             <h1 class="headline-1">Film <small>2001</small></h1>
@@ -39,7 +39,11 @@ def test_film_page_scraper_parses_ids(monkeypatch):
         </body>
     </html>
     """
-    monkeypatch.setattr(scraper.client, "get", lambda url: SimpleNamespace(text=html))
+    monkeypatch.setattr(
+        scraper.client,
+        "get",
+        lambda url: SimpleNamespace(text=html, url=url),
+    )
 
     details = scraper.fetch("sample-film")
     assert details.tmdb_id == 1234
@@ -69,7 +73,11 @@ def test_film_page_scraper_handles_releasedate_block(monkeypatch):
         </body>
     </html>
     """
-    monkeypatch.setattr(scraper.client, "get", lambda url: SimpleNamespace(text=html))
+    monkeypatch.setattr(
+        scraper.client,
+        "get",
+        lambda url: SimpleNamespace(text=html, url=url),
+    )
     details = scraper.fetch("episode-film")
     assert details.release_year == 2016
     assert [d.name for d in details.directors] == ["Jane Doe"]
@@ -89,7 +97,11 @@ def test_film_page_scraper_extracts_tmdb_from_button(monkeypatch):
         </body>
     </html>
     """
-    monkeypatch.setattr(scraper.client, "get", lambda url: SimpleNamespace(text=html))
+    monkeypatch.setattr(
+        scraper.client,
+        "get",
+        lambda url: SimpleNamespace(text=html, url=url),
+    )
     details = scraper.fetch("miniseries")
     assert details.tmdb_id == 79788
     assert details.tmdb_media_type == "tv"
@@ -109,7 +121,11 @@ def test_film_page_scraper_detects_media_type_when_data_id_present(monkeypatch):
         </body>
     </html>
     """
-    monkeypatch.setattr(scraper.client, "get", lambda url: SimpleNamespace(text=html))
+    monkeypatch.setattr(
+        scraper.client,
+        "get",
+        lambda url: SimpleNamespace(text=html, url=url),
+    )
     details = scraper.fetch("another-miniseries")
     assert details.tmdb_id == 110534
     assert details.tmdb_media_type == "tv"
@@ -133,7 +149,11 @@ def test_film_page_scraper_extracts_poster_and_genres(monkeypatch):
         </body>
     </html>
     """
-    monkeypatch.setattr(scraper.client, "get", lambda url: SimpleNamespace(text=html))
+    monkeypatch.setattr(
+        scraper.client,
+        "get",
+        lambda url: SimpleNamespace(text=html, url=url),
+    )
     details = scraper.fetch("poster-film")
     assert details.poster_url == "https://image.example/poster.jpg"
     assert details.genres == ["Crime", "Drama"]

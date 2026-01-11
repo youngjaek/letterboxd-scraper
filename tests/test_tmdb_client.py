@@ -121,3 +121,40 @@ def test_missing_api_key_raises():
     settings = make_settings(api_key=None)
     with pytest.raises(ValueError):
         TMDBClient(settings)
+
+
+def test_fetch_tv_payload_includes_external_ids():
+    http_client = DummyHTTPClient(
+        responses=[
+            {
+                "name": "Sample Show",
+                "first_air_date": "2020-01-01",
+                "episode_run_time": [55],
+                "origin_country": ["US"],
+                "external_ids": {"imdb_id": "tt999"},
+            }
+        ]
+    )
+    client = TMDBClient(make_settings(), http_client=http_client, cache_ttl_seconds=0)
+    payload = client._fetch_media_payload(5, "tv")
+    assert payload.media_type == "tv"
+    assert payload.imdb_id == "tt999"
+    assert payload.runtime_minutes == 55
+
+
+def test_find_by_external_imdb_returns_episode():
+    http_client = DummyHTTPClient(
+        responses=[
+            {
+                "movie_results": [],
+                "tv_results": [],
+                "tv_episode_results": [
+                    {"id": 123, "media_type": "tv_episode", "show_id": 50, "season_number": 2, "episode_number": 7}
+                ],
+            }
+        ]
+    )
+    client = TMDBClient(make_settings(), http_client=http_client, cache_ttl_seconds=0)
+    result = client.find_by_external_imdb("tt123")
+    assert result["media_type"] == "tv_episode"
+    assert result["show_id"] == 50

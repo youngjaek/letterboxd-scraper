@@ -11,7 +11,6 @@ from ..db import models
 from ..db.session import get_session
 from ..scrapers.follow_graph import FollowGraphScraper, expand_follow_graph
 from ..scrapers.film_pages import FilmPageScraper
-from ..scrapers.person_pages import PersonPageScraper
 from ..scrapers.ratings import FilmRating, ProfileRatingsScraper
 from . import cohorts as cohort_service
 from . import insights as insight_service
@@ -301,7 +300,6 @@ def enrich_films(
         return EnrichmentResult(processed=0, succeeded=0, skipped=0, film_ids=[])
     client = TMDBClient(settings)
     film_page_scraper = FilmPageScraper(settings)
-    person_page_scraper = PersonPageScraper(settings)
     succeeded = 0
     skipped = 0
     try:
@@ -323,13 +321,11 @@ def enrich_films(
                     film,
                     client,
                     film_page_scraper=film_page_scraper,
-                    person_page_scraper=person_page_scraper,
                 )
                 if success:
                     succeeded += 1
     finally:
         film_page_scraper.close()
-        person_page_scraper.close()
     processed = len(film_id_list)
     skipped = min(skipped, processed)
     return EnrichmentResult(

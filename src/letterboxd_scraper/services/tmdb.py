@@ -34,6 +34,9 @@ class TMDBMediaPayload:
     genres: List[Dict[str, Any]]
     origin_countries: List[Dict[str, Any]]
     raw: Dict[str, Any]
+    show_id: Optional[int] = None
+    season_number: Optional[int] = None
+    episode_number: Optional[int] = None
 
 
 class RequestRateLimiter:
@@ -100,13 +103,46 @@ class TMDBClient:
         self,
         tmdb_id: int,
         media_type: str = "movie",
+        *,
+        show_id: Optional[int] = None,
+        season_number: Optional[int] = None,
+        episode_number: Optional[int] = None,
     ) -> Tuple[TMDBMediaPayload, List[TMDBPersonCredit]]:
+        if media_type == "tv_episode":
+            if show_id is None or season_number is None or episode_number is None:
+                raise ValueError("TV episodes require show_id, season_number, and episode_number.")
+            payload = self._fetch_episode_payload(
+                show_id,
+                season_number,
+                episode_number,
+            )
+            credits = self._fetch_episode_credits(show_id, season_number, episode_number)
+            return payload, credits
         payload = self._fetch_media_payload(tmdb_id, media_type=media_type)
         credits = self.fetch_credits(tmdb_id, media_type=media_type)
         return payload, credits
 
     def close(self) -> None:
         self._client.close()
+
+    def find_by_external_imdb(self, imdb_id: str) -> Optional[Dict[str, Any]]:
+        imdb_id = imdb_id.strip()
+        if not imdb_id:
+            return None
+        data = self._request_json(
+            f"/find/{imdb_id}",
+            params={"external_source": "imdb_id"},
+        )
+        for entry in data.get("movie_results", []):
+            entry["media_type"] = "movie"
+            return entry
+        for entry in data.get("tv_results", []):
+            entry["media_type"] = "tv"
+            return entry
+        for entry in data.get("tv_episode_results", []):
+            entry["media_type"] = "tv_episode"
+            return entry
+        return None
 
     def _request_json(self, path: str, params: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         params = params or {}
@@ -129,10 +165,47 @@ class TMDBClient:
 
     def _fetch_media_payload(self, tmdb_id: int, media_type: str) -> TMDBMediaPayload:
         if media_type == "tv":
-            data = self._request_json(f"/tv/{tmdb_id}")
+            data = self._request_json(
+                f"/tv/{tmdb_id}",
+                params={"append_to_response": "external_ids"},
+            )
         else:
             data = self._request_json(f"/movie/{tmdb_id}")
         return self._parse_media_payload(tmdb_id, data, media_type)
+
+    def _fetch_episode_payload(
+        self,
+        show_id: int,
+        season_number: int,
+        episode_number: int,
+    ) -> TMDBMediaPayload:
+        data = self._request_json(
+            f"/tv/{show_id}/season/{season_number}/episode/{episode_number}",
+            params={"append_to_response": "external_ids"},
+        )
+        return self._parse_episode_payload(show_id, season_number, episode_number, data)
+
+    def _fetch_episode_credits(
+        self,
+        show_id: int,
+        season_number: int,
+        episode_number: int,
+    ) -> List[TMDBPersonCredit]:
+        data = self._request_json(
+            f"/tv/{show_id}/season/{season_number}/episode/{episode_number}/credits"
+        )
+        credits: List[TMDBPersonCredit] = []
+        for crew in data.get("crew", []):
+            credits.append(
+                TMDBPersonCredit(
+                    person_id=crew.get("id"),
+                    name=crew.get("name") or "",
+                    job=crew.get("job"),
+                    department=crew.get("department"),
+                    credit_order=crew.get("order"),
+                )
+            )
+        return credits
 
     def _parse_media_payload(
         self, tmdb_id: int, data: Dict[str, Any], media_type: str
@@ -157,6 +230,8 @@ class TMDBClient:
                 {"iso_3166_1": code} for code in data.get("origin_country", [])
             ]
             imdb_id = None
+            external_ids = (data.get("external_ids") or {}) if isinstance(data, dict) else {}
+            imdb_id = external_ids.get("imdb_id")
         else:
             title = data.get("title") or data.get("original_title") or ""
             original_title = data.get("original_title")
@@ -176,6 +251,44 @@ class TMDBClient:
             genres=data.get("genres") or [],
             origin_countries=origin_countries,
             raw=dict(data),
+        )
+
+    def _parse_episode_payload(
+        self,
+        show_id: int,
+        season_number: int,
+        episode_number: int,
+        data: Dict[str, Any],
+    ) -> TMDBMediaPayload:
+        air_date_val = data.get("air_date")
+        release_date = None
+        if air_date_val:
+            try:
+                release_date = date.fromisoformat(air_date_val)
+            except ValueError:
+                release_date = None
+        poster_path = data.get("still_path")
+        poster_url = f"{self.image_base_url}{poster_path}" if poster_path else None
+        external_ids = data.get("external_ids") or {}
+        imdb_id = external_ids.get("imdb_id")
+        title = data.get("name") or ""
+        runtime_minutes = data.get("runtime")
+        return TMDBMediaPayload(
+            tmdb_id=data.get("id") or 0,
+            media_type="tv_episode",
+            imdb_id=imdb_id,
+            title=title,
+            original_title=data.get("name"),
+            runtime_minutes=runtime_minutes,
+            release_date=release_date,
+            overview=data.get("overview"),
+            poster_url=poster_url,
+            genres=data.get("genres") or [],
+            origin_countries=[],
+            raw=dict(data),
+            show_id=show_id,
+            season_number=season_number,
+            episode_number=episode_number,
         )
 
     @staticmethod

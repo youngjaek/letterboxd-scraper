@@ -2,8 +2,10 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass, field
-from typing import Dict, Optional, List, Tuple
+from typing import Dict, Optional, List
+from urllib.parse import urlparse
 
+import httpx
 from bs4 import BeautifulSoup
 
 from ..config import Settings
@@ -20,6 +22,7 @@ class PersonCredit:
 @dataclass
 class FilmPageDetails:
     slug: str
+    title: Optional[str]
     tmdb_id: Optional[int]
     imdb_id: Optional[str]
     letterboxd_film_id: Optional[int]
@@ -41,15 +44,18 @@ class FilmPageScraper:
         self._cache: Dict[str, FilmPageDetails] = {}
 
     def fetch(self, slug: str) -> FilmPageDetails:
-        normalized_slug = slug.strip().strip("/")
-        if normalized_slug in self._cache:
-            return self._cache[normalized_slug]
-        url = f"https://letterboxd.com/film/{normalized_slug}/"
+        requested_slug = slug.strip().strip("/")
+        cached = self._cache.get(requested_slug)
+        if cached:
+            return cached
+        url = f"https://letterboxd.com/film/{requested_slug}/"
         response = self.client.get(url)
         soup = parse_html_document(response.text)
+        canonical_slug = self._extract_canonical_slug(response) or requested_slug
         tmdb_id, tmdb_media_type = self._extract_tmdb_reference(soup)
         details = FilmPageDetails(
-            slug=normalized_slug,
+            slug=canonical_slug,
+            title=self._extract_title(soup),
             tmdb_id=tmdb_id,
             imdb_id=self._extract_imdb_id(soup),
             letterboxd_film_id=self._extract_letterboxd_id(soup),
@@ -61,14 +67,20 @@ class FilmPageScraper:
             directors=self._extract_directors(soup),
             tmdb_media_type=tmdb_media_type,
         )
-        self._cache[normalized_slug] = details
+        self._cache[requested_slug] = details
+        self._cache[canonical_slug] = details
         return details
 
     def close(self) -> None:
         self.client.close()
 
     @staticmethod
-    def _extract_tmdb_reference(soup: BeautifulSoup) -> Tuple[Optional[int], Optional[str]]:
+    def _extract_canonical_slug(response: httpx.Response) -> Optional[str]:
+        parsed = urlparse(str(response.url))
+        return slug_from_link(parsed.path)
+
+    @staticmethod
+    def _extract_tmdb_reference(soup: BeautifulSoup) -> tuple[Optional[int], Optional[str]]:
         link = soup.find("a", href=re.compile(r"themoviedb\.org/(movie|tv)/(\d+)"))
         if link:
             match = re.search(r"themoviedb\.org/(movie|tv)/(\d+)", link.get("href", ""))
@@ -80,17 +92,39 @@ class FilmPageScraper:
         body = soup.find("body")
         if body:
             tmdb_id = _coerce_int(body.get("data-tmdb-id"))
-            media_type = body.get("data-tmdb-type") or None
             if tmdb_id:
-                return tmdb_id, (media_type or "movie")
+                media_type = body.get("data-tmdb-type") or None
+                return tmdb_id, media_type
         return None, None
 
     @staticmethod
     def _extract_letterboxd_id(soup: BeautifulSoup) -> Optional[int]:
         body = soup.find("body")
-        if not body:
-            return None
-        return _coerce_int(body.get("data-film-id"))
+        if body:
+            value = _coerce_int(body.get("data-film-id"))
+            if value:
+                return value
+        node = soup.find(attrs={"data-film-id": True})
+        if node:
+            return _coerce_int(node.get("data-film-id"))
+        return None
+
+    @staticmethod
+    def _extract_title(soup: BeautifulSoup) -> Optional[str]:
+        heading = soup.find("h1", class_=re.compile("headline"))
+        if heading:
+            text = heading.get_text(" ", strip=True)
+            badge = heading.find("small")
+            if badge:
+                badge_text = badge.get_text(strip=True)
+                if badge_text:
+                    text = text.replace(badge_text, "").strip()
+            if text:
+                return text
+        meta = soup.find("meta", attrs={"property": "og:title"})
+        if meta and meta.get("content"):
+            return meta["content"].strip()
+        return None
 
     @staticmethod
     def _extract_imdb_id(soup: BeautifulSoup) -> Optional[str]:
