@@ -73,7 +73,7 @@ def enrich_film_metadata(
         return False
     if not _apply_tmdb_payload(session, film, payload):
         return False
-    _sync_directors(session, film, credits, client)
+    _sync_directors(session, film, credits, client, payload.raw)
     return True
 
 
@@ -177,8 +177,24 @@ def _sync_directors(
     film: models.Film,
     credits: Iterable[TMDBPersonCredit],
     client: TMDBClient,
+    payload_raw: Optional[Dict[str, Any]] = None,
 ) -> bool:
     directors = [credit for credit in credits if (credit.job or "").lower() == "director"]
+    if film.tmdb_media_type == "tv" and not directors and isinstance(payload_raw, dict):
+        for idx, creator in enumerate(payload_raw.get("created_by") or []):
+            person_id = creator.get("id")
+            name = creator.get("name") or creator.get("original_name") or ""
+            if not name:
+                continue
+            directors.append(
+                TMDBPersonCredit(
+                    person_id=person_id,
+                    name=name,
+                    job="Director",
+                    department="Created By",
+                    credit_order=idx,
+                )
+            )
     session.query(models.FilmPerson).filter(
         models.FilmPerson.film_id == film.id, models.FilmPerson.role == "director"
     ).delete(synchronize_session=False)
@@ -317,6 +333,7 @@ def sync_people_metadata(
     *,
     limit: Optional[int] = None,
     progress: Optional[Callable[[models.Person], None]] = None,
+    on_error: Optional[Callable[[models.Person, Exception], None]] = None,
 ) -> int:
     query = (
         session.query(models.Person)
@@ -333,8 +350,14 @@ def sync_people_metadata(
     if limit:
         query = query.limit(limit)
     updated = 0
-    for person in query:
-        if _refresh_person_from_tmdb(person, client):
+    for person in query.yield_per(100):
+        try:
+            changed = _refresh_person_from_tmdb(person, client)
+        except Exception as exc:  # pragma: no cover - defensive
+            if on_error:
+                on_error(person, exc)
+            continue
+        if changed:
             updated += 1
             if progress:
                 progress(person)
@@ -370,7 +393,6 @@ def film_enrichment_reasons(film: models.Film) -> list[str]:
     if not directors_with_tmdb:
         reasons.append("missing director credit")
     return reasons
-
 
 def film_needs_enrichment(film: models.Film) -> bool:
     return bool(film_enrichment_reasons(film))

@@ -562,6 +562,7 @@ def scrape_enrich(
         )
 
     if tmdb_enabled and people:
+        console.print("[cyan]Syncing TMDB people metadata…[/cyan]")
         person_client = TMDBClient(settings, rate_limiter=tmdb_rate_limiter)
         try:
             with get_session(settings) as session:
@@ -573,11 +574,14 @@ def scrape_enrich(
                         f"[green]TMDB person[/green] {escape(person.name or 'Unknown')} "
                         f"(tmdb_id={person.tmdb_id})"
                     ),
+                    on_error=lambda person, exc: console.print(
+                        f"[red]TMDB person failed[/red] {escape(person.name or 'Unknown')} "
+                        f"(tmdb_id={person.tmdb_id}): {exc}"
+                    ),
                 )
         finally:
             person_client.close()
-        if refreshed:
-            console.print(f"[green]TMDB people[/green] refreshed {refreshed} record(s).")
+        console.print(f"[green]TMDB people[/green] refreshed {refreshed} record(s).")
 
     jobs: List[EnrichmentJob] = []
     force_enrich = bool(slug) or force
