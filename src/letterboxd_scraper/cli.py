@@ -3,7 +3,7 @@ from __future__ import annotations
 from collections import Counter
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timezone
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from time import perf_counter
 from typing import Any, Dict, List, Optional, Set
@@ -14,6 +14,7 @@ import re
 import typer
 from sqlalchemy import func, or_
 from rich.console import Console
+from rich.markup import escape
 from rich.table import Table
 
 from .config import Settings, load_settings
@@ -28,7 +29,7 @@ from .services import rankings as ranking_service
 from .services import stats as stats_service
 from .services import telemetry as telemetry_service
 from .services import workflows as workflow_service
-from .services.enrichment import enrich_film_metadata, film_needs_enrichment
+from .services.enrichment import enrich_film_metadata, film_enrichment_reasons, film_needs_enrichment
 from .scrapers.film_pages import FilmPageScraper
 from .scrapers.ratings import ProfileRatingsScraper
 from .scrapers.follow_graph import FollowGraphScraper, expand_follow_graph
@@ -427,6 +428,7 @@ def scrape_enrich(
         slug: str
         needs_tmdb: bool
         needs_histogram: bool
+        tmdb_reasons: List[str] = field(default_factory=list)
 
     @dataclass
     class EnrichmentResultRow:
@@ -503,6 +505,8 @@ def scrape_enrich(
                     histogram_error=None,
                     touched=False,
                 )
+            if job.needs_tmdb and not job.tmdb_reasons:
+                job.tmdb_reasons = film_enrichment_reasons(film)
             if job.needs_tmdb and ctx.tmdb_client:
                 tmdb_start = perf_counter()
                 try:
@@ -553,7 +557,18 @@ def scrape_enrich(
             console.print(f"[red]Film '{slug}' not found.[/red]")
             raise typer.Exit(code=1)
         for film in films:
-            needs_tmdb = tmdb_enabled and (force_enrich or film_needs_enrichment(film))
+            tmdb_reasons: List[str] = []
+            if tmdb_enabled:
+                if force_enrich:
+                    tmdb_reasons = film_enrichment_reasons(film)
+                    if not tmdb_reasons:
+                        tmdb_reasons = ["force"]
+                    needs_tmdb = True
+                else:
+                    tmdb_reasons = film_enrichment_reasons(film)
+                    needs_tmdb = bool(tmdb_reasons)
+            else:
+                needs_tmdb = False
             needs_histogram = include_histograms and (force_enrich or histogram_service.film_needs_histogram(film))
             if not (needs_tmdb or needs_histogram):
                 continue
@@ -563,6 +578,7 @@ def scrape_enrich(
                     slug=film.slug,
                     needs_tmdb=needs_tmdb,
                     needs_histogram=needs_histogram,
+                    tmdb_reasons=tmdb_reasons if needs_tmdb else [],
                 )
             )
             if limit and len(jobs) >= limit:
@@ -592,10 +608,17 @@ def scrape_enrich(
                 if result.tmdb_success:
                     tmdb_calls += 1
                     tmdb_elapsed_total += result.tmdb_elapsed
-                    console.print(f"[green]TMDB[/green] {result.slug} ({result.tmdb_elapsed:.2f}s)")
+                    reason_text = (
+                        f" {escape('[' + ', '.join(job.tmdb_reasons) + ']')}" if job.tmdb_reasons else ""
+                    )
+                    console.print(f"[green]TMDB[/green] {result.slug}{reason_text} ({result.tmdb_elapsed:.2f}s)")
                 elif job.needs_tmdb and result.tmdb_error:
+                    reason_text = (
+                        f" {escape('[' + ', '.join(job.tmdb_reasons) + ']')}" if job.tmdb_reasons else ""
+                    )
                     console.print(
-                        f"[red]TMDB failed[/red] {result.slug} ({result.tmdb_elapsed:.2f}s): {result.tmdb_error}"
+                        f"[red]TMDB failed[/red] {result.slug}{reason_text} "
+                        f"({result.tmdb_elapsed:.2f}s): {result.tmdb_error}"
                     )
                     _log_enrich_error(f"TMDB failed {result.slug}: {result.tmdb_error}")
                 if result.histogram_success:

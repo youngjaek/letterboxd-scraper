@@ -1,4 +1,4 @@
-from datetime import date
+from datetime import date, datetime, timezone
 from typing import Any, Dict, List, Optional, Tuple
 
 from sqlalchemy import create_engine, select
@@ -195,4 +195,36 @@ def test_enrich_falls_back_to_imdb_lookup_on_failure():
     assert film.tmdb_episode_number == 8
     assert film.release_year == 2025
     assert len(client.calls) == 2  # initial attempt + fallback
+    session.close()
+
+
+def test_film_enrichment_reasons_include_director_metadata_gap():
+    session = make_session()
+    film = models.Film(
+        slug="needs-director-sync",
+        title="Needs Director",
+        tmdb_id=1,
+        tmdb_media_type="movie",
+        poster_url="poster",
+        overview="summary",
+        release_year=2020,
+    )
+    person = models.Person(tmdb_id=10, name="Director One")
+    session.add_all([film, person])
+    session.commit()
+    film_person = models.FilmPerson(film_id=film.id, person=person, role="director", credit_order=1)
+    session.add(film_person)
+    session.commit()
+    session.refresh(film)
+
+    reasons = enrichment.film_enrichment_reasons(film)
+    assert "director metadata incomplete" in reasons
+
+    person.profile_url = "https://image/dir.jpg"
+    person.tmdb_synced_at = datetime.now(timezone.utc)
+    session.commit()
+    session.refresh(film)
+
+    refreshed_reasons = enrichment.film_enrichment_reasons(film)
+    assert "director metadata incomplete" not in refreshed_reasons
     session.close()

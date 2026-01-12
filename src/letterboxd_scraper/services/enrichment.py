@@ -293,24 +293,39 @@ def _fetch_person_details(client: TMDBClient, person_id: int) -> Optional[Dict[s
     return data or None
 
 
-def film_needs_enrichment(film: models.Film) -> bool:
-    tmdb_not_found = film.tmdb_not_found
-    missing_director = not any(
-        credit.role == "director"
-        and getattr(credit, "person", None) is not None
-        and getattr(credit.person, "tmdb_id", None) is not None
+def film_enrichment_reasons(film: models.Film) -> list[str]:
+    reasons: list[str] = []
+    directors = [
+        credit
         for credit in getattr(film, "people", [])
-    )
-    if tmdb_not_found:
-        return film.release_year is None or missing_director
+        if credit.role == "director" and getattr(credit, "person", None) is not None
+    ]
+    directors_with_tmdb = [
+        credit for credit in directors if getattr(credit.person, "tmdb_id", None) is not None
+    ]
+    directors_missing_metadata = [
+        credit for credit in directors_with_tmdb if getattr(credit.person, "tmdb_synced_at", None) is None
+    ]
+    if film.tmdb_not_found:
+        if film.release_year is None:
+            reasons.append("release year unresolved after TMDB miss")
+        if not directors_with_tmdb:
+            reasons.append("missing director after TMDB miss")
+        return reasons
     if not film.tmdb_id:
-        return True
+        reasons.append("missing TMDB id")
     if not film.poster_url:
-        return True
+        reasons.append("missing poster")
     if film.overview in (None, ""):
-        return True
+        reasons.append("missing overview")
     if film.release_year is None:
-        return True
-    if missing_director:
-        return True
-    return False
+        reasons.append("missing release year")
+    if not directors_with_tmdb:
+        reasons.append("missing director credit")
+    elif directors_missing_metadata:
+        reasons.append("director metadata incomplete")
+    return reasons
+
+
+def film_needs_enrichment(film: models.Film) -> bool:
+    return bool(film_enrichment_reasons(film))
