@@ -198,8 +198,9 @@ def test_enrich_falls_back_to_imdb_lookup_on_failure():
     session.close()
 
 
-def test_film_enrichment_reasons_include_director_metadata_gap():
+def test_film_enrichment_reasons_allow_director_with_missing_person_metadata():
     session = make_session()
+    person = models.Person(tmdb_id=10, name="Director One")
     film = models.Film(
         slug="needs-director-sync",
         title="Needs Director",
@@ -209,22 +210,63 @@ def test_film_enrichment_reasons_include_director_metadata_gap():
         overview="summary",
         release_year=2020,
     )
-    person = models.Person(tmdb_id=10, name="Director One")
-    session.add_all([film, person])
+    session.add_all([person, film])
     session.commit()
-    film_person = models.FilmPerson(film_id=film.id, person=person, role="director", credit_order=1)
-    session.add(film_person)
+    session.add(models.FilmPerson(film_id=film.id, person=person, role="director", credit_order=1))
     session.commit()
     session.refresh(film)
 
     reasons = enrichment.film_enrichment_reasons(film)
-    assert "director metadata incomplete" in reasons
+    assert "missing director credit" not in reasons
+    session.close()
 
-    person.profile_url = "https://image/dir.jpg"
-    person.tmdb_synced_at = datetime.now(timezone.utc)
+
+def test_film_enrichment_reasons_detect_missing_director_credit():
+    session = make_session()
+    film = models.Film(
+        slug="missing-director",
+        title="Needs Director",
+        tmdb_id=1,
+        tmdb_media_type="movie",
+        poster_url="poster",
+        overview="summary",
+        release_year=2020,
+    )
+    session.add(film)
+    session.commit()
+    session.add(
+        models.FilmPerson(
+            film_id=film.id,
+            person=models.Person(tmdb_id=None, name="Unknown"),
+            role="director",
+            credit_order=1,
+        )
+    )
     session.commit()
     session.refresh(film)
 
-    refreshed_reasons = enrichment.film_enrichment_reasons(film)
-    assert "director metadata incomplete" not in refreshed_reasons
+    reasons = enrichment.film_enrichment_reasons(film)
+    assert "missing director credit" in reasons
+    session.close()
+
+
+def test_sync_people_metadata_updates_missing_profiles():
+    session = make_session()
+    person = models.Person(tmdb_id=11, name="Dir")
+    session.add(person)
+    session.commit()
+    client = FakeTMDBClient(
+        make_payload(),
+        [],
+        person_details={11: {"profile_path": "/dir.jpg", "known_for_department": "Directing"}},
+    )
+
+    updated = enrichment.sync_people_metadata(session, client)
+    session.commit()
+
+    session.refresh(person)
+    assert updated == 1
+    assert person.profile_url == "https://image.tmdb.org/t/p/original/dir.jpg"
+    assert person.known_for_department == "Directing"
+    assert person.tmdb_synced_at is not None
     session.close()

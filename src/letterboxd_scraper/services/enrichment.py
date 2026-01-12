@@ -2,8 +2,9 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime, timezone
-from typing import Dict, Iterable, Optional
+from typing import Callable, Dict, Iterable, Optional
 
+from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
 from ..db import models
@@ -267,21 +268,14 @@ def _ensure_person(
         person.name = credit.name
     needs_refresh = (
         credit.person_id is not None
-        and (person.profile_url is None or person.known_for_department is None or person.tmdb_synced_at is None)
+        and (
+            person.profile_url is None
+            or person.known_for_department is None
+            or person.tmdb_synced_at is None
+        )
     )
-    if needs_refresh:
-        details = _fetch_person_details(client, credit.person_id)
-        if details is not None:
-            profile_path = details.get("profile_path")
-            person.profile_url = (
-                f"{client.image_base_url}{profile_path}"
-                if isinstance(profile_path, str) and profile_path
-                else None
-            )
-            department = details.get("known_for_department")
-            if isinstance(department, str):
-                person.known_for_department = department
-            person.tmdb_synced_at = datetime.now(timezone.utc)
+    if needs_refresh and credit.person_id:
+        _refresh_person_from_tmdb(person, client)
     return person
 
 
@@ -293,6 +287,62 @@ def _fetch_person_details(client: TMDBClient, person_id: int) -> Optional[Dict[s
     return data or None
 
 
+def _refresh_person_from_tmdb(person: models.Person, client: TMDBClient) -> bool:
+    if not person.tmdb_id:
+        return False
+    details = _fetch_person_details(client, person.tmdb_id)
+    if not details:
+        return False
+    profile_path = details.get("profile_path")
+    profile_url = (
+        f"{client.image_base_url}{profile_path}"
+        if isinstance(profile_path, str) and profile_path
+        else None
+    )
+    department = details.get("known_for_department")
+    changed = False
+    if profile_url != person.profile_url:
+        person.profile_url = profile_url
+        changed = True
+    if isinstance(department, str) and department and department != person.known_for_department:
+        person.known_for_department = department
+        changed = True
+    person.tmdb_synced_at = datetime.now(timezone.utc)
+    return changed
+
+
+def sync_people_metadata(
+    session: Session,
+    client: TMDBClient,
+    *,
+    limit: Optional[int] = None,
+    progress: Optional[Callable[[models.Person], None]] = None,
+) -> int:
+    query = (
+        session.query(models.Person)
+        .filter(
+            models.Person.tmdb_id.isnot(None),
+            or_(
+                models.Person.profile_url.is_(None),
+                models.Person.known_for_department.is_(None),
+                models.Person.tmdb_synced_at.is_(None),
+            ),
+        )
+        .order_by(models.Person.id)
+    )
+    if limit:
+        query = query.limit(limit)
+    updated = 0
+    for person in query:
+        if _refresh_person_from_tmdb(person, client):
+            updated += 1
+            if progress:
+                progress(person)
+    if updated:
+        session.flush()
+    return updated
+
+
 def film_enrichment_reasons(film: models.Film) -> list[str]:
     reasons: list[str] = []
     directors = [
@@ -302,9 +352,6 @@ def film_enrichment_reasons(film: models.Film) -> list[str]:
     ]
     directors_with_tmdb = [
         credit for credit in directors if getattr(credit.person, "tmdb_id", None) is not None
-    ]
-    directors_missing_metadata = [
-        credit for credit in directors_with_tmdb if getattr(credit.person, "tmdb_synced_at", None) is None
     ]
     if film.tmdb_not_found:
         if film.release_year is None:
@@ -322,8 +369,6 @@ def film_enrichment_reasons(film: models.Film) -> list[str]:
         reasons.append("missing release year")
     if not directors_with_tmdb:
         reasons.append("missing director credit")
-    elif directors_missing_metadata:
-        reasons.append("director metadata incomplete")
     return reasons
 
 

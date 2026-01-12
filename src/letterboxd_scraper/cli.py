@@ -29,7 +29,12 @@ from .services import rankings as ranking_service
 from .services import stats as stats_service
 from .services import telemetry as telemetry_service
 from .services import workflows as workflow_service
-from .services.enrichment import enrich_film_metadata, film_enrichment_reasons, film_needs_enrichment
+from .services.enrichment import (
+    enrich_film_metadata,
+    film_enrichment_reasons,
+    film_needs_enrichment,
+    sync_people_metadata,
+)
 from .scrapers.film_pages import FilmPageScraper
 from .scrapers.ratings import ProfileRatingsScraper
 from .scrapers.follow_graph import FollowGraphScraper, expand_follow_graph
@@ -406,6 +411,16 @@ def scrape_enrich(
         "--force",
         help="Refresh metadata even if it already exists.",
     ),
+    people: bool = typer.Option(
+        True,
+        "--people/--no-people",
+        help="Refresh TMDB person metadata before film jobs.",
+    ),
+    people_limit: Optional[int] = typer.Option(
+        None,
+        "--people-limit",
+        help="Maximum TMDB person records to refresh before film enrichment.",
+    ),
 ) -> None:
     """Hydrate films with TMDB metadata and/or Letterboxd histograms."""
     settings = get_state(ctx)["settings"]
@@ -545,6 +560,24 @@ def scrape_enrich(
             histogram_error=histogram_error,
             touched=touched,
         )
+
+    if tmdb_enabled and people:
+        person_client = TMDBClient(settings, rate_limiter=tmdb_rate_limiter)
+        try:
+            with get_session(settings) as session:
+                refreshed = sync_people_metadata(
+                    session,
+                    person_client,
+                    limit=people_limit,
+                    progress=lambda person: console.print(
+                        f"[green]TMDB person[/green] {escape(person.name or 'Unknown')} "
+                        f"(tmdb_id={person.tmdb_id})"
+                    ),
+                )
+        finally:
+            person_client.close()
+        if refreshed:
+            console.print(f"[green]TMDB people[/green] refreshed {refreshed} record(s).")
 
     jobs: List[EnrichmentJob] = []
     force_enrich = bool(slug) or force
