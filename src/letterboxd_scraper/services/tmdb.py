@@ -122,6 +122,12 @@ class TMDBClient:
         credits = self.fetch_credits(tmdb_id, media_type=media_type)
         return payload, credits
 
+    def fetch_person(self, person_id: int) -> Optional[Dict[str, Any]]:
+        data = self._request_json(f"/person/{person_id}")
+        if not data:
+            return None
+        return data
+
     def close(self) -> None:
         self._client.close()
 

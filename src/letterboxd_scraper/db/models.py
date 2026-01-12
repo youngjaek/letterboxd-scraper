@@ -6,14 +6,12 @@ from typing import Any, Dict, Optional
 from sqlalchemy import (
     JSON,
     Boolean,
-    Column,
     Date,
     DateTime,
     ForeignKey,
     Integer,
     Numeric,
     String,
-    Table,
     Text,
     UniqueConstraint,
 )
@@ -63,13 +61,18 @@ class Film(Base):
     runtime_minutes: Mapped[Optional[int]] = mapped_column(Integer)
     poster_url: Mapped[Optional[str]] = mapped_column(Text)
     overview: Mapped[Optional[str]] = mapped_column(Text)
-    origin_countries: Mapped[Optional[list[str]]] = mapped_column(JSON)
-    genres: Mapped[Optional[list[Dict[str, Any]]]] = mapped_column(JSON)
-    tmdb_payload: Mapped[Optional[Dict[str, Any]]] = mapped_column(JSON)
+    tmdb_synced_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
+    tmdb_not_found: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
 
     ratings: Mapped[list["Rating"]] = relationship(back_populates="film", cascade="all, delete-orphan")
     people: Mapped[list["FilmPerson"]] = relationship(back_populates="film", cascade="all, delete-orphan")
+    genres: Mapped[list["Genre"]] = relationship(
+        "Genre", secondary="film_genres", back_populates="films", lazy="selectin"
+    )
+    countries: Mapped[list["Country"]] = relationship(
+        "Country", secondary="film_countries", back_populates="films", lazy="selectin"
+    )
     histograms: Mapped[list["FilmHistogram"]] = relationship(
         back_populates="film", cascade="all, delete-orphan"
     )
@@ -94,6 +97,76 @@ class Rating(Base):
 
     user: Mapped["User"] = relationship(back_populates="ratings")
     film: Mapped["Film"] = relationship(back_populates="ratings")
+
+
+class Genre(Base):
+    __tablename__ = "genres"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    tmdb_id: Mapped[int] = mapped_column(Integer, unique=True, nullable=False)
+    name: Mapped[str] = mapped_column(String, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=_utcnow, onupdate=_utcnow
+    )
+
+    films: Mapped[list["Film"]] = relationship(
+        "Film", secondary="film_genres", back_populates="genres"
+    )
+
+
+class FilmGenre(Base):
+    __tablename__ = "film_genres"
+
+    film_id: Mapped[int] = mapped_column(
+        ForeignKey("films.id", ondelete="CASCADE"), primary_key=True
+    )
+    genre_id: Mapped[int] = mapped_column(
+        ForeignKey("genres.id", ondelete="CASCADE"), primary_key=True
+    )
+
+
+class Country(Base):
+    __tablename__ = "countries"
+
+    code: Mapped[str] = mapped_column(String, primary_key=True)
+    name: Mapped[Optional[str]] = mapped_column(String)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=_utcnow, onupdate=_utcnow
+    )
+
+    films: Mapped[list["Film"]] = relationship(
+        "Film", secondary="film_countries", back_populates="countries"
+    )
+
+
+class FilmCountry(Base):
+    __tablename__ = "film_countries"
+
+    film_id: Mapped[int] = mapped_column(
+        ForeignKey("films.id", ondelete="CASCADE"), primary_key=True
+    )
+    country_code: Mapped[str] = mapped_column(
+        ForeignKey("countries.code", ondelete="CASCADE"), primary_key=True
+    )
+
+
+class Person(Base):
+    __tablename__ = "people"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    tmdb_id: Mapped[Optional[int]] = mapped_column(Integer, unique=True)
+    name: Mapped[str] = mapped_column(String, nullable=False)
+    profile_url: Mapped[Optional[str]] = mapped_column(Text)
+    known_for_department: Mapped[Optional[str]] = mapped_column(String)
+    tmdb_synced_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=_utcnow, onupdate=_utcnow
+    )
+
+    film_credits: Mapped[list["FilmPerson"]] = relationship(back_populates="person")
 
 
 class Cohort(Base):
@@ -195,12 +268,12 @@ class FilmPerson(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     film_id: Mapped[int] = mapped_column(ForeignKey("films.id", ondelete="CASCADE"))
-    person_id: Mapped[Optional[int]] = mapped_column(Integer)
-    name: Mapped[str] = mapped_column(String, nullable=False)
+    person_id: Mapped[int] = mapped_column(ForeignKey("people.id", ondelete="CASCADE"))
     role: Mapped[str] = mapped_column(String, nullable=False)
     credit_order: Mapped[Optional[int]] = mapped_column(Integer)
 
     film: Mapped["Film"] = relationship(back_populates="people")
+    person: Mapped["Person"] = relationship(back_populates="film_credits")
 
 
 class JobRun(Base):

@@ -29,9 +29,8 @@ CREATE TABLE IF NOT EXISTS films (
     runtime_minutes INT,
     poster_url TEXT,
     overview TEXT,
-    origin_countries JSONB,
-    genres JSONB,
-    tmdb_payload JSONB,
+    tmdb_synced_at TIMESTAMPTZ,
+    tmdb_not_found BOOLEAN DEFAULT FALSE,
     created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
@@ -48,6 +47,48 @@ CREATE TABLE IF NOT EXISTS ratings (
     diary_entry_url TEXT,
     PRIMARY KEY (user_id, film_id)
 );
+
+CREATE TABLE IF NOT EXISTS people (
+    id SERIAL PRIMARY KEY,
+    tmdb_id INT UNIQUE,
+    name TEXT NOT NULL,
+    profile_url TEXT,
+    known_for_department TEXT,
+    tmdb_synced_at TIMESTAMPTZ,
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS genres (
+    id SERIAL PRIMARY KEY,
+    tmdb_id INT UNIQUE NOT NULL,
+    name TEXT NOT NULL,
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS film_genres (
+    film_id INT REFERENCES films(id) ON DELETE CASCADE,
+    genre_id INT REFERENCES genres(id) ON DELETE CASCADE,
+    PRIMARY KEY (film_id, genre_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_film_genres_genre ON film_genres(genre_id);
+
+CREATE TABLE IF NOT EXISTS countries (
+    code TEXT PRIMARY KEY,
+    name TEXT,
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS film_countries (
+    film_id INT REFERENCES films(id) ON DELETE CASCADE,
+    country_code TEXT REFERENCES countries(code) ON DELETE CASCADE,
+    PRIMARY KEY (film_id, country_code)
+);
+
+CREATE INDEX IF NOT EXISTS idx_film_countries_country ON film_countries(country_code);
 
 CREATE TABLE IF NOT EXISTS cohorts (
     id SERIAL PRIMARY KEY,
@@ -129,8 +170,7 @@ CREATE TABLE IF NOT EXISTS ranking_insights (
 CREATE TABLE IF NOT EXISTS film_people (
     id SERIAL PRIMARY KEY,
     film_id INT REFERENCES films(id) ON DELETE CASCADE,
-    person_id INT,
-    name TEXT NOT NULL,
+    person_id INT REFERENCES people(id) ON DELETE CASCADE,
     role TEXT NOT NULL,
     credit_order INT,
     UNIQUE (film_id, role, person_id)

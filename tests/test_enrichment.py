@@ -18,12 +18,15 @@ class FakeTMDBClient:
         credits: List[TMDBPersonCredit],
         *,
         find_result: Optional[Dict[str, Any]] = None,
+        person_details: Optional[Dict[int, Dict[str, Any]]] = None,
     ):
         self.payload = payload
         self.credits = credits
         self.find_result = find_result
         self.raise_once = False
         self.calls: List[Tuple[int, str, Optional[int], Optional[int], Optional[int]]] = []
+        self.person_details = person_details or {}
+        self.image_base_url = "https://image.tmdb.org/t/p/original"
 
     def fetch_media_with_credits(
         self,
@@ -43,12 +46,15 @@ class FakeTMDBClient:
     def find_by_external_imdb(self, imdb_id: str) -> Optional[Dict[str, Any]]:
         return self.find_result
 
+    def fetch_person(self, person_id: int) -> Optional[Dict[str, Any]]:
+        return self.person_details.get(person_id)
+
 
 class FakeFilmPageScraper:
     def __init__(self, details: FilmPageDetails):
         self.details = details
 
-    def fetch(self, slug: str) -> FilmPageDetails:
+    def fetch(self, slug: str, *, letterboxd_id: Optional[int] = None) -> FilmPageDetails:
         return self.details
 
 
@@ -74,8 +80,8 @@ def make_payload(media_type: str = "movie") -> TMDBMediaPayload:
         release_date=date(2023, 1, 2),
         overview="Overview",
         poster_url="https://image/poster.jpg",
-        genres=[{"id": 1}],
-        origin_countries=[{"iso_3166_1": "US"}],
+        genres=[{"id": 1, "name": "Drama"}],
+        origin_countries=[{"iso_3166_1": "us", "name": "United States"}],
         raw={"id": 42},
     )
 
@@ -91,7 +97,14 @@ def test_enrich_film_metadata_populates_fields_and_directors():
         TMDBPersonCredit(person_id=2, name="Writer", job="Writer", department="Writing", credit_order=2),
         TMDBPersonCredit(person_id=3, name="Dir Two", job="Director", department="Directing", credit_order=None),
     ]
-    client = FakeTMDBClient(payload, credits)
+    client = FakeTMDBClient(
+        payload,
+        credits,
+        person_details={
+            1: {"profile_path": "/dir-one.jpg", "known_for_department": "Directing"},
+            3: {"profile_path": None, "known_for_department": "Directing"},
+        },
+    )
 
     enriched = enrichment.enrich_film_metadata(session, film, client, tmdb_id=42)
     session.commit()
@@ -104,7 +117,10 @@ def test_enrich_film_metadata_populates_fields_and_directors():
     directors = session.execute(
         select(models.FilmPerson).where(models.FilmPerson.film_id == film.id).order_by(models.FilmPerson.credit_order)
     ).scalars().all()
-    assert [d.name for d in directors] == ["Dir One", "Dir Two"]
+    assert [d.person.name for d in directors] == ["Dir One", "Dir Two"]
+    assert directors[0].person.profile_url == "https://image.tmdb.org/t/p/original/dir-one.jpg"
+    assert [g.name for g in film.genres] == ["Drama"]
+    assert [c.code for c in film.countries] == ["US"]
     session.close()
 
 

@@ -63,16 +63,66 @@ films (
     release_year INT,
     release_date DATE,
     tmdb_id INT,
+    tmdb_media_type TEXT,
+    tmdb_show_id INT,
+    tmdb_season_number INT,
+    tmdb_episode_number INT,
     imdb_id TEXT,
     runtime_minutes INT,
     poster_url TEXT,
     overview TEXT,
-    origin_countries JSONB,
-    genres JSONB,
+    tmdb_synced_at TIMESTAMP,
+    tmdb_not_found BOOLEAN DEFAULT FALSE,
     letterboxd_fan_count INT,
     letterboxd_rating_count INT,
     letterboxd_weighted_average NUMERIC(4,2),
-    tmdb_payload JSONB
+)
+
+people (
+    id SERIAL PRIMARY KEY,
+    tmdb_id INT UNIQUE,
+    name TEXT NOT NULL,
+    profile_url TEXT,
+    known_for_department TEXT,
+    tmdb_synced_at TIMESTAMP,
+    created_at TIMESTAMP DEFAULT NOW(),
+    updated_at TIMESTAMP DEFAULT NOW()
+)
+
+film_people (
+    id SERIAL PRIMARY KEY,
+    film_id INT REFERENCES films(id) ON DELETE CASCADE,
+    person_id INT REFERENCES people(id) ON DELETE CASCADE,
+    role TEXT NOT NULL,
+    credit_order INT,
+    UNIQUE (film_id, role, person_id)
+)
+
+genres (
+    id SERIAL PRIMARY KEY,
+    tmdb_id INT UNIQUE NOT NULL,
+    name TEXT NOT NULL,
+    created_at TIMESTAMP DEFAULT NOW(),
+    updated_at TIMESTAMP DEFAULT NOW()
+)
+
+film_genres (
+    film_id INT REFERENCES films(id) ON DELETE CASCADE,
+    genre_id INT REFERENCES genres(id) ON DELETE CASCADE,
+    PRIMARY KEY (film_id, genre_id)
+)
+
+countries (
+    code TEXT PRIMARY KEY,
+    name TEXT,
+    created_at TIMESTAMP DEFAULT NOW(),
+    updated_at TIMESTAMP DEFAULT NOW()
+)
+
+film_countries (
+    film_id INT REFERENCES films(id) ON DELETE CASCADE,
+    country_code TEXT REFERENCES countries(code) ON DELETE CASCADE,
+    PRIMARY KEY (film_id, country_code)
 )
 
 ratings (

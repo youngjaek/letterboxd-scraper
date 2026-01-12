@@ -68,7 +68,7 @@ Additions/changes on top of `db/schema.sql`:
 - `ratings`: add `liked BOOLEAN`, `favorite BOOLEAN`, `rating_distribution JSONB` (or keep distribution in aggregated tables), `diary_entry_url` (exists), `rated_at`.
 - `film_histograms` (new): `(film_id, global_bucket_counts JSONB, cohort_bucket_counts JSONB)` or a normalized `(film_id, bucket_label, count)` table keyed per cohort.
 - `film_metadata_sync`: optional table to track enrichment status (pending, fetched, failed) for each slug/TMDB ID.
-- `tmdb_payloads` (optional): persist TMDB JSON per `tmdb_id` so we can rehydrate genres/countries/directors offline and avoid blowing through rate limits.
+- Normalize TMDB metadata: add `people`, `genres`, and `countries` tables with join tables (`film_people`, `film_genres`, `film_countries`) plus `films.tmdb_synced_at`/`tmdb_not_found` flags so we can query/filter without storing the raw payload blob.
 
 Materialized view `cohort_film_stats` will be extended to include:
 
