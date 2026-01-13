@@ -11,6 +11,8 @@ Before writing product code, verify that the lower layers are healthy:
 - Schemas used by the UI (`cohort_film_stats`, `film_rankings`, `ranking_insights`, saved exports) are stable enough for public reads; add migrations if still shifting.
 - Decide where the product layer lives in the repo (recommended: `apps/api` + `apps/web` folders that import shared code from `src/letterboxd_scraper`).
 
+> **Kickoff status (current):** the manual Redis + Celery runner executes the full pipeline end-to-end, and recent cohort/film data already exists in Postgres. Automation polish can follow later; nothing blocks API/UI scaffolding.
+
 ## 2. Architecture Decisions & Skeleton
 
 1. **Service layout:** add an API service (FastAPI/Flask) that imports ORM models + celery tasks. Co-locate a lightweight web frontend (Next.js/Vite) or start with server-rendered templates if faster.
