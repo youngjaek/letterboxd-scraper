@@ -38,6 +38,8 @@ Before writing product code, verify that the lower layers are healthy:
    - Add `saved_filters` table with serialized filter JSON and metadata (owner, cohort_id, description, shareable slug).
    - Endpoints to list/create/share saved filters. Later, reuse the same table for embeds.
 
+> **API progress:** FastAPI scaffolding plus `/health` and initial `/cohorts` listing endpoints now exist; continue layering auth, cohort CRUD, and stats reads atop this foundation.
+
 ## 4. Frontend/Web Experience
 
 1. **Tech choice:** start with a simple single-page app (React + Vite or Next.js). Use shared UI toolkit or Tailwind for speed.
