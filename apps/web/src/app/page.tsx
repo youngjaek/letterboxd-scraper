@@ -1,4 +1,5 @@
 import { CreateCohortForm } from "@/components/create-cohort-form";
+import Link from "next/link";
 
 const apiBase = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8000";
 
@@ -65,19 +66,19 @@ export default async function Home() {
             ) : (
               <ul>
                 {cohorts.map((cohort) => (
-                  <li key={cohort.id} className="border-b border-white/5 px-6 py-4 last:border-b-0">
-                    <div className="flex items-center justify-between">
-                      <div>
-                        <p className="text-lg font-medium text-brand-primary">{cohort.label}</p>
-                        <p className="text-xs text-slate-400">ID {cohort.id} · Created {new Date(cohort.created_at).toLocaleDateString()}</p>
-                      </div>
-                      <div className="text-right text-sm text-slate-200">
-                        <p>{cohort.member_count} member(s)</p>
-                      </div>
+                <li key={cohort.id} className="border-b border-white/5 px-6 py-4 last:border-b-0">
+                  <Link href={`/cohorts/${cohort.id}`} className="flex items-center justify-between">
+                    <div>
+                      <p className="text-lg font-medium text-brand-primary">{cohort.label}</p>
+                      <p className="text-xs text-slate-400">ID {cohort.id} · Created {new Date(cohort.created_at).toLocaleDateString()}</p>
                     </div>
-                  </li>
-                ))}
-              </ul>
+                    <div className="text-right text-sm text-slate-200">
+                      <p>{cohort.member_count} member(s)</p>
+                    </div>
+                  </Link>
+                </li>
+              ))}
+            </ul>
             )}
           </div>
         </div>
