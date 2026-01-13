@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { CohortActions } from "@/components/cohort-actions";
 
 const apiBase = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8000";
 
@@ -41,12 +42,13 @@ export default async function CohortRankingsPage({ params }: { params: { id: str
           ← Back
         </Link>
       </div>
-      <div className="rounded-xl border border-white/10 bg-white/5">
-        {rankings.length === 0 ? (
-          <p className="p-6 text-sm text-slate-400">No rankings yet.</p>
-        ) : (
-          <ol>
-            {rankings.map((item: any) => (
+      <div className="grid gap-6 md:grid-cols-[2fr,1fr]">
+        <div className="rounded-xl border border-white/10 bg-white/5">
+          {rankings.length === 0 ? (
+            <p className="p-6 text-sm text-slate-400">No rankings yet.</p>
+          ) : (
+            <ol>
+              {rankings.map((item: any) => (
               <li key={item.film_id} className="border-b border-white/5 px-6 py-4 last:border-b-0">
                 <div className="flex items-center justify-between">
                   <div>
@@ -61,9 +63,13 @@ export default async function CohortRankingsPage({ params }: { params: { id: str
                   </div>
                 </div>
               </li>
-            ))}
-          </ol>
-        )}
+              ))}
+            </ol>
+          )}
+        </div>
+        <div>
+          <CohortActions cohortId={cohort.id} currentLabel={cohort.label} />
+        </div>
       </div>
     </section>
   );
