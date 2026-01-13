@@ -23,3 +23,4 @@ tests/fixtures/_ignored/
 
 docs/roadmap
 src/letterboxd_ratings_scraper.egg-info/
+.env.docker

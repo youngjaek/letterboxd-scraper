@@ -99,3 +99,13 @@ Each command respects configuration passed via `.env`, environment variables, or
    ```bash
    pytest
    ```
+
+## Running background services
+
+Start Redis and the Celery worker via Docker Compose so API-triggered syncs and UI actions work end-to-end:
+
+```bash
+docker compose -f docker-compose.dev.yml up --build redis celery-worker
+```
+
+Leave that terminal running. Then launch the API (`uvicorn apps.api.main:app --reload`) and frontend (`cd apps/web && npm run dev`) in separate shells.
