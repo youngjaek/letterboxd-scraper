@@ -7,6 +7,8 @@ CREATE TABLE IF NOT EXISTS users (
     avatar_url TEXT,
     last_full_scrape_at TIMESTAMPTZ,
     last_incremental_scrape_at TIMESTAMPTZ,
+    api_key TEXT,
+    api_key_hash TEXT,
     created_at TIMESTAMPTZ DEFAULT NOW()
 );
 

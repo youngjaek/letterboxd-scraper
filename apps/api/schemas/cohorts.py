@@ -33,3 +33,10 @@ class CohortDefinition(BaseModel):
 class CohortDetail(CohortSummary):
     definition: CohortDefinition | None = None
     members: list[str]
+
+
+class CohortCreateRequest(BaseModel):
+    seed_username: str
+    label: str
+    depth: int | None = None
+    include_seed: bool | None = None

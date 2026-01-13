@@ -2,14 +2,16 @@ from __future__ import annotations
 
 from typing import List
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session, joinedload
 
+from letterboxd_scraper import config, services
 from letterboxd_scraper.db import models
 
-from ..dependencies import get_db_session
-from ..schemas import CohortDefinition, CohortDetail, CohortSummary
+from ..auth import require_api_user
+from ..dependencies import get_db_session, get_settings
+from ..schemas import CohortCreateRequest, CohortDefinition, CohortDetail, CohortSummary
 
 
 router = APIRouter(prefix="/cohorts", tags=["cohorts"])
@@ -56,11 +58,7 @@ def get_cohort_detail(cohort_id: int, session: Session = Depends(get_db_session)
         raise HTTPException(status_code=404, detail="Cohort not found")
     member_usernames = [member.user.letterboxd_username for member in cohort.members]
     definition_payload = cohort.definition if isinstance(cohort.definition, dict) else None
-    definition = (
-        CohortDefinition.model_validate(definition_payload)
-        if definition_payload
-        else None
-    )
+    definition = CohortDefinition.model_validate(definition_payload) if definition_payload else None
     return CohortDetail(
         id=cohort.id,
         label=cohort.label,
@@ -71,3 +69,30 @@ def get_cohort_detail(cohort_id: int, session: Session = Depends(get_db_session)
         definition=definition,
         members=member_usernames,
     )
+
+
+@router.post(
+    "/",
+    response_model=CohortDetail,
+    status_code=status.HTTP_201_CREATED,
+    summary="Create cohort",
+)
+def create_cohort(
+    payload: CohortCreateRequest,
+    session: Session = Depends(get_db_session),
+    settings: config.Settings = Depends(get_settings),
+    user: models.User = Depends(require_api_user),
+) -> CohortDetail:
+    definition = {
+        "depth": payload.depth or settings.cohort_defaults.follow_depth,
+        "include_seed": (
+            payload.include_seed
+            if payload.include_seed is not None
+            else settings.cohort_defaults.include_seed
+        ),
+    }
+    seed_user = services.cohorts.get_or_create_user(session, payload.seed_username)
+    cohort = services.cohorts.create_cohort(session, seed_user, payload.label, definition)
+    if definition["include_seed"]:
+        services.cohorts.add_member(session, cohort, seed_user, depth=0)
+    return get_cohort_detail(cohort.id, session=session)

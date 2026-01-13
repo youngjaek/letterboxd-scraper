@@ -38,7 +38,7 @@ Before writing product code, verify that the lower layers are healthy:
    - Add `saved_filters` table with serialized filter JSON and metadata (owner, cohort_id, description, shareable slug).
    - Endpoints to list/create/share saved filters. Later, reuse the same table for embeds.
 
-> **API progress:** `/health`, `/cohorts`, and `/cohorts/{id}` endpoints now expose cohort listings and detail payloads; next steps layer auth, cohort creation, and stats reads atop this foundation.
+> **API progress:** `/health`, `/cohorts`, `/cohorts/{id}`, and POST `/cohorts` now expose listings, detail payloads, and creation; next steps layer auth, sync triggers, and stats reads atop this foundation.
 
 ## 4. Frontend/Web Experience
 
