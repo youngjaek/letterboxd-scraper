@@ -1,48 +1,64 @@
 const apiBase = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8000";
 
-const cards = [
-  {
-    title: "Cohort dashboard",
-    body: "Track membership, last sync, and failure modes per cohort.",
-  },
-  {
-    title: "Ranking explorer",
-    body: "Apply release year, watcher, and divergence filters powered by cached stats.",
-  },
-  {
-    title: "Saved filters",
-    body: "Persist smart lists and export CSVs for sharing.",
-  },
-  {
-    title: "Job timeline",
-    body: "Inspect the scrape → enrich → stats pipeline without using the CLI.",
-  },
-];
+type CohortSummary = {
+  id: number;
+  label: string;
+  member_count: number;
+  created_at: string;
+};
 
-export default function Home() {
+async function fetchCohorts(): Promise<CohortSummary[]> {
+  const res = await fetch(`${apiBase}/cohorts`, { next: { revalidate: 30 } });
+  if (!res.ok) {
+    console.warn("Failed to load cohorts", res.status, await res.text());
+    return [];
+  }
+  return res.json();
+}
+
+export default async function Home() {
+  const cohorts = await fetchCohorts();
   return (
     <section className="mx-auto flex max-w-5xl flex-col gap-10">
       <header className="space-y-4">
         <p className="text-sm uppercase tracking-[0.3em] text-brand-accent">Phase 3</p>
         <h1 className="text-4xl font-semibold">Letterboxd Cohort Control Room</h1>
         <p className="text-base text-slate-300">
-          This private alpha frontend will call the FastAPI backend running at
-          <span className="font-mono text-white"> {apiBase}</span>. Hook the UI up to the API once
-          auth, cohort CRUD, and stats endpoints are available.
+          FastAPI base:
+          <span className="font-mono text-white"> {apiBase}</span>
         </p>
       </header>
-      <div className="grid gap-4 md:grid-cols-2">
-        {cards.map((card) => (
-          <article key={card.title} className="rounded-xl border border-white/10 bg-white/5 p-6 shadow-lg">
-            <h2 className="text-xl font-semibold text-brand-primary">{card.title}</h2>
-            <p className="mt-2 text-sm text-slate-200">{card.body}</p>
-          </article>
-        ))}
+      <div className="space-y-3">
+        <div className="flex items-center justify-between">
+          <h2 className="text-2xl font-semibold">Cohorts</h2>
+          <span className="text-sm text-slate-400">{cohorts.length} total</span>
+        </div>
+        <div className="rounded-xl border border-white/10 bg-white/5">
+          {cohorts.length === 0 ? (
+            <p className="p-6 text-sm text-slate-400">No cohorts found; create one via the CLI or API.</p>
+          ) : (
+            <ul>
+              {cohorts.map((cohort) => (
+                <li key={cohort.id} className="border-b border-white/5 px-6 py-4 last:border-b-0">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <p className="text-lg font-medium text-brand-primary">{cohort.label}</p>
+                      <p className="text-xs text-slate-400">ID {cohort.id} · Created {new Date(cohort.created_at).toLocaleDateString()}</p>
+                    </div>
+                    <div className="text-right text-sm text-slate-200">
+                      <p>{cohort.member_count} member(s)</p>
+                    </div>
+                  </div>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
       </div>
       <footer className="text-sm text-slate-400">
-        Need to run the backend? Start it via
+        Backend running? Start via
         <code className="mx-2 rounded bg-black/40 px-2 py-1 text-xs">uvicorn apps.api.main:app --reload</code>
-        then point this app to it.
+        and ensure `NEXT_PUBLIC_API_BASE_URL` targets it.
       </footer>
     </section>
   );

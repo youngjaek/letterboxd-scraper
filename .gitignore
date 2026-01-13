@@ -17,6 +17,7 @@ apps/web/node_modules/
 apps/web/.next/
 apps/web/.turbo/
 apps/web/.eslintcache
+apps/web/.env.local
 
 tests/fixtures/_ignored/
 
