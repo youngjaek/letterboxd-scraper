@@ -55,12 +55,19 @@ Before writing product code, verify that the lower layers are healthy:
 
 ## 6. Packaging, Deployments & Ops
 
-1. **Docker compose:** add services for `api`, `frontend`, `worker`, `scheduler`, `db`, and `redis`. Document `.env` variables and default credentials in `README`.
-2. **Environment promotion:** define `dev`, `staging`, `alpha` config files; guard production-only secrets. Use the same compose stack for self-hosted testers.
-3. **CI updates:**
+1. **Docker compose (primary runtime):** add services for `api`, `frontend`, `worker`, `scheduler`, `db`, and `redis`. Document `.env` variables and default credentials in `README`. This stack becomes both the local dev environment and the artifact we deploy to low-cost hosts.
+2. **Budget-aware hosting plan:**
+   - **Short term:** run the compose stack on GitHub Codespaces or a local machine during development; no infra cost.
+   - **Private alpha:** deploy the same compose bundle to a single VPS using DigitalOcean’s $200 student credit or Azure’s $100 credit. Start with the smallest instance (1–2 vCPU, 2–4 GB RAM) plus managed Postgres if affordable; fall back to a containerized Postgres when credits are tight.
+   - **Supporting services:** use the Pack’s Redis add-ons (e.g., Azure Cache, DO Managed Redis) only when needed; otherwise rely on the compose-provided Redis. GitHub Pages + a free `.me`/`.tech` domain cover the marketing site.
+   - **Future scale:** capture infra-as-code (Terraform) early so graduating to AWS/GCP or Kubernetes later is a lift-and-shift instead of a rewrite, but do **not** introduce Kubernetes/EKS until the hosted alpha outgrows a single VM.
+3. **Environment promotion:** define `dev`, `staging`, `alpha` config files; guard production-only secrets. Use the same compose stack for self-hosted testers so setup matches the hosted environment.
+4. **CI updates:**
    - Lint/test API + frontend along with Python code.
-   - Add integration tests that spin up a throwaway DB, seed fixture cohorts, and hit API endpoints.
-4. **Observability:** export structured logs, Prometheus metrics, and uptime probes. Surface them in the UI admin area for transparency.
+   - Add integration tests that spin up a throwaway DB, seed fixture cohorts, and hit API endpoints (can run inside GitHub Actions with service containers).
+5. **Observability:** export structured logs, Prometheus metrics, and uptime probes. Surface them in the UI admin area for transparency; when moving to cloud credits, pair the VM with lightweight monitoring (Grafana Cloud free tier or Azure Monitor).
+
+> Hosting summary: Phase 3 deliberately avoids Kubernetes/AWS managed fleets; Docker Compose + student cloud credits keep operational costs near zero while still demonstrating production-like deployment skills. Document the migration path to more robust infra (Terraform modules aiming at ECS/Kubernetes) but defer until traction demands it.
 
 ## 7. Verification & Exit Criteria
 
