@@ -7,6 +7,7 @@ from sqlalchemy import func, select, text
 from sqlalchemy.orm import Session, joinedload
 
 from letterboxd_scraper import config, services
+from letterboxd_scraper.pipeline import tasks as pipeline_tasks
 from letterboxd_scraper.db import models
 
 from ..auth import require_api_user
@@ -147,3 +148,37 @@ def list_rankings(
         )
         for row in rows
     ]
+
+
+@router.post("/{cohort_id}/sync", summary="Run cohort pipeline")
+def trigger_cohort_sync(
+    cohort_id: int,
+    incremental: bool = True,
+    user: models.User = Depends(require_api_user),
+) -> dict:
+    result = pipeline_tasks.run_cohort_pipeline.delay(cohort_id, incremental=incremental)
+    return {"task_id": result.id, "cohort_id": cohort_id, "incremental": incremental}
+
+
+@router.patch("/{cohort_id}", response_model=CohortDetail, summary="Rename cohort")
+def rename_cohort(
+    cohort_id: int,
+    label: str,
+    session: Session = Depends(get_db_session),
+    user: models.User = Depends(require_api_user),
+) -> CohortDetail:
+    cohort = services.cohorts.rename_cohort(session, cohort_id, label)
+    if not cohort:
+        raise HTTPException(status_code=404, detail="Cohort not found")
+    return get_cohort_detail(cohort_id, session=session)
+
+
+@router.delete("/{cohort_id}", status_code=status.HTTP_204_NO_CONTENT, summary="Delete cohort")
+def delete_cohort(
+    cohort_id: int,
+    session: Session = Depends(get_db_session),
+    user: models.User = Depends(require_api_user),
+) -> None:
+    deleted = services.cohorts.delete_cohort(session, cohort_id)
+    if not deleted:
+        raise HTTPException(status_code=404, detail="Cohort not found")
