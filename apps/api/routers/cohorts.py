@@ -2,14 +2,14 @@ from __future__ import annotations
 
 from typing import List
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import func, select
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 
 from letterboxd_scraper.db import models
 
 from ..dependencies import get_db_session
-from ..schemas import CohortSummary
+from ..schemas import CohortDefinition, CohortDetail, CohortSummary
 
 
 router = APIRouter(prefix="/cohorts", tags=["cohorts"])
@@ -42,3 +42,32 @@ def list_cohorts(session: Session = Depends(get_db_session)) -> list[CohortSumma
         )
         for row in results
     ]
+
+
+@router.get("/{cohort_id}", response_model=CohortDetail, summary="Cohort details")
+def get_cohort_detail(cohort_id: int, session: Session = Depends(get_db_session)) -> CohortDetail:
+    stmt = (
+        select(models.Cohort)
+        .options(joinedload(models.Cohort.members).joinedload(models.CohortMember.user))
+        .where(models.Cohort.id == cohort_id)
+    )
+    cohort = session.scalars(stmt).unique().one_or_none()
+    if not cohort:
+        raise HTTPException(status_code=404, detail="Cohort not found")
+    member_usernames = [member.user.letterboxd_username for member in cohort.members]
+    definition_payload = cohort.definition if isinstance(cohort.definition, dict) else None
+    definition = (
+        CohortDefinition.model_validate(definition_payload)
+        if definition_payload
+        else None
+    )
+    return CohortDetail(
+        id=cohort.id,
+        label=cohort.label,
+        seed_user_id=cohort.seed_user_id,
+        member_count=len(member_usernames),
+        created_at=cohort.created_at,
+        updated_at=cohort.updated_at,
+        definition=definition,
+        members=member_usernames,
+    )
