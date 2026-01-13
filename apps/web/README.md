@@ -1,13 +1,28 @@
-# Web Frontend Scaffold
+# Letterboxd Cohort Web Client
 
-Phase 3 ships a lightweight web client that talks to the FastAPI service under `apps/api`. This directory currently holds documentation while we decide whether to bootstrap the frontend with Next.js or Vite.
+This Next.js app consumes the FastAPI service under `apps/api` to provide dashboards, rankings, and saved filters outlined in `docs/phase3_product_layer_plan.md`.
 
-Planned steps (mirrors `docs/phase3_product_layer_plan.md`):
+## Getting Started
 
-1. Initialize a TypeScript React app (Next.js preferred for SSR/ISR).
-2. Configure `.env` consumption for the API base URL and feature flags.
-3. Implement the initial views: cohort dashboard, ranking explorer + filters, saved lists grid, and run history timeline.
-4. Wire up React Query/SWR to the API and add Storybook or unit tests for shared components.
-5. Package the frontend as part of the Docker Compose stack for local and alpha deployments.
+```bash
+cd apps/web
+npm install
+npm run dev
+```
 
-Until the tooling decision is finalized, this README marks the placeholder so the repo structure aligns with the development plan.
+Set `NEXT_PUBLIC_API_BASE_URL` in `.env.local` (defaults to `http://localhost:8000` so it works with `uvicorn apps.api.main:app --reload`).
+
+## Structure
+
+- `src/app/` — App Router entrypoints (`layout.tsx`, `page.tsx`).
+- `src/app/(marketing)/page.tsx` — future marketing/landing routes.
+- `src/components/` — shared UI primitives (to be added as features land).
+- `tailwind.config.ts` — design tokens; update as we firm up the design system.
+
+## Roadmap
+
+- [ ] Cohort dashboard view with sync status + quick stats.
+- [ ] Ranking explorer + filter drawer backed by `/cohorts/{id}/stats` API.
+- [ ] Saved filter grid and export modal.
+- [ ] Auth guard + session management (API tokens/passwordless login).
+- [ ] Storybook or Chromatic visual regression coverage.

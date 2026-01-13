@@ -1,7 +1,8 @@
 from fastapi import APIRouter, Depends
 
-from ..dependencies import get_settings
 from letterboxd_scraper.config import Settings
+
+from ..dependencies import get_settings
 
 
 router = APIRouter(prefix="/health", tags=["health"])

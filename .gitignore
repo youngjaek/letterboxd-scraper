@@ -10,6 +10,14 @@ __pycache__/
 .venv/
 logs/
 
+# Frontend build artifacts
+node_modules/
+.next/
+apps/web/node_modules/
+apps/web/.next/
+apps/web/.turbo/
+apps/web/.eslintcache
+
 tests/fixtures/_ignored/
 
 docs/roadmap
