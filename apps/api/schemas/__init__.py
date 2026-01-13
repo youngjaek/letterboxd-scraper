@@ -6,10 +6,12 @@ from .cohorts import (
     CohortDefinition,
     CohortCreateRequest,
 )
+from .rankings import RankingItem
 
 __all__ = [
     "CohortSummary",
     "CohortDetail",
     "CohortDefinition",
     "CohortCreateRequest",
+    "RankingItem",
 ]

@@ -9,6 +9,16 @@ type CohortSummary = {
   created_at: string;
 };
 
+type RankingItem = {
+  film_id: number;
+  rank: number | null;
+  score: number;
+  title: string;
+  slug: string;
+  watchers: number | null;
+  avg_rating: number | null;
+};
+
 async function fetchCohorts(): Promise<CohortSummary[]> {
   const res = await fetch(`${apiBase}/cohorts`, { cache: "no-store" });
   if (!res.ok) {
@@ -18,8 +28,21 @@ async function fetchCohorts(): Promise<CohortSummary[]> {
   return res.json();
 }
 
+async function fetchRankings(cohortId: number, limit = 10): Promise<RankingItem[]> {
+  const res = await fetch(`${apiBase}/cohorts/${cohortId}/rankings?limit=${limit}`, {
+    cache: "no-store",
+  });
+  if (!res.ok) {
+    console.warn("Failed to load rankings", res.status, await res.text());
+    return [];
+  }
+  return res.json();
+}
+
 export default async function Home() {
   const cohorts = await fetchCohorts();
+  const featuredCohort = cohorts[0];
+  const rankings = featuredCohort ? await fetchRankings(featuredCohort.id) : [];
   return (
     <section className="mx-auto flex max-w-5xl flex-col gap-10">
       <header className="space-y-4">
@@ -60,6 +83,31 @@ export default async function Home() {
         </div>
         <div>
           <CreateCohortForm />
+          {featuredCohort && (
+            <div className="mt-6 rounded-xl border border-white/10 bg-white/5 p-6">
+              <h3 className="text-lg font-semibold text-brand-primary">
+                Top picks · {featuredCohort.label}
+              </h3>
+              {rankings.length === 0 ? (
+                <p className="mt-2 text-sm text-slate-400">No rankings yet.</p>
+              ) : (
+                <ol className="mt-4 space-y-3">
+                  {rankings.map((item) => (
+                    <li key={item.film_id} className="flex items-center justify-between text-sm">
+                      <div>
+                        <span className="mr-3 text-xs text-slate-500">#{item.rank ?? "?"}</span>
+                        <span className="font-medium text-white">{item.title}</span>
+                      </div>
+                      <div className="text-right text-slate-400">
+                        <p>{item.avg_rating?.toFixed(2) ?? "--"} avg</p>
+                        <p className="text-xs">{item.watchers ?? 0} watchers</p>
+                      </div>
+                    </li>
+                  ))}
+                </ol>
+              )}
+            </div>
+          )}
         </div>
       </div>
       <footer className="text-sm text-slate-400">

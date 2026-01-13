@@ -3,7 +3,7 @@ from __future__ import annotations
 from typing import List
 
 from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy import func, select
+from sqlalchemy import func, select, text
 from sqlalchemy.orm import Session, joinedload
 
 from letterboxd_scraper import config, services
@@ -11,7 +11,13 @@ from letterboxd_scraper.db import models
 
 from ..auth import require_api_user
 from ..dependencies import get_db_session, get_settings
-from ..schemas import CohortCreateRequest, CohortDefinition, CohortDetail, CohortSummary
+from ..schemas import (
+    CohortCreateRequest,
+    CohortDefinition,
+    CohortDetail,
+    CohortSummary,
+    RankingItem,
+)
 
 
 router = APIRouter(prefix="/cohorts", tags=["cohorts"])
@@ -96,3 +102,48 @@ def create_cohort(
     if definition["include_seed"]:
         services.cohorts.add_member(session, cohort, seed_user, depth=0)
     return get_cohort_detail(cohort.id, session=session)
+
+
+@router.get("/{cohort_id}/rankings", response_model=List[RankingItem], summary="Top rankings")
+def list_rankings(
+    cohort_id: int,
+    strategy: str = "bayesian",
+    limit: int = 25,
+    session: Session = Depends(get_db_session),
+) -> list[RankingItem]:
+    stmt = text(
+        """
+        SELECT
+            fr.film_id,
+            fr.rank,
+            fr.score,
+            f.title,
+            f.slug,
+            stats.watchers,
+            stats.avg_rating
+        FROM film_rankings fr
+        JOIN films f ON f.id = fr.film_id
+        LEFT JOIN cohort_film_stats stats
+            ON stats.cohort_id = fr.cohort_id AND stats.film_id = fr.film_id
+        WHERE fr.cohort_id = :cohort_id
+          AND fr.strategy = :strategy
+        ORDER BY fr.rank ASC
+        LIMIT :limit
+        """
+    )
+    rows = session.execute(
+        stmt,
+        {"cohort_id": cohort_id, "strategy": strategy, "limit": limit},
+    ).fetchall()
+    return [
+        RankingItem(
+            film_id=row.film_id,
+            rank=row.rank,
+            score=float(row.score) if row.score is not None else 0.0,
+            title=row.title,
+            slug=row.slug,
+            watchers=int(row.watchers) if row.watchers is not None else None,
+            avg_rating=float(row.avg_rating) if row.avg_rating is not None else None,
+        )
+        for row in rows
+    ]
