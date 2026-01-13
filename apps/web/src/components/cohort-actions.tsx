@@ -5,71 +5,67 @@ import { useState, FormEvent } from "react";
 const apiBase = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8000";
 const apiKey = process.env.NEXT_PUBLIC_API_KEY;
 
+async function sendRequest(path: string, init: RequestInit = {}) {
+  const headers = {
+    "Content-Type": "application/json",
+    ...(apiKey ? { "X-API-Key": apiKey } : {}),
+    ...(init.headers || {}),
+  };
+  const response = await fetch(`${apiBase}${path}`, { ...init, headers });
+  if (!response.ok) {
+    const text = await response.text();
+    throw new Error(text || `Failed with status ${response.status}`);
+  }
+  return response;
+}
+
 export function CohortActions({ cohortId, currentLabel }: { cohortId: number; currentLabel: string }) {
   const [label, setLabel] = useState(currentLabel);
-  const [message, setMessage] = useState<string | null>(null);
+  const [status, setStatus] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [loading, setLoading] = useState(false);
-
-  async function request(path: string, options: RequestInit) {
-    const headers = {
-      "Content-Type": "application/json",
-      ...(apiKey ? { "X-API-Key": apiKey } : {}),
-      ...(options.headers || {}),
-    };
-    const response = await fetch(`${apiBase}${path}`, { ...options, headers });
-    if (!response.ok) {
-      const text = await response.text();
-      throw new Error(text || `Failed with status ${response.status}`);
-    }
-    return response;
-  }
+  const [busy, setBusy] = useState(false);
 
   async function handleRename(event: FormEvent) {
     event.preventDefault();
-    setLoading(true);
-    setMessage(null);
+    setBusy(true);
+    setStatus(null);
     setError(null);
     try {
-      await request(`/cohorts/${cohortId}?label=${encodeURIComponent(label)}`, {
-        method: "PATCH",
-      });
-      setMessage("Renamed cohort.");
+      await sendRequest(`/cohorts/${cohortId}?label=${encodeURIComponent(label)}`, { method: "PATCH" });
+      setStatus("Renamed cohort.");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Rename failed");
     } finally {
-      setLoading(false);
+      setBusy(false);
     }
   }
 
   async function handleSync() {
-    setLoading(true);
-    setMessage(null);
+    setBusy(true);
+    setStatus(null);
     setError(null);
     try {
-      await request(`/cohorts/${cohortId}/sync`, { method: "POST", body: JSON.stringify({}) });
-      setMessage("Sync triggered.");
+      await sendRequest(`/cohorts/${cohortId}/sync`, { method: "POST" });
+      setStatus("Sync triggered.");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Sync failed");
     } finally {
-      setLoading(false);
+      setBusy(false);
     }
   }
 
   async function handleDelete() {
-    if (!confirm("Delete this cohort?")) {
-      return;
-    }
-    setLoading(true);
-    setMessage(null);
+    if (!confirm("Delete this cohort?")) return;
+    setBusy(true);
+    setStatus(null);
     setError(null);
     try {
-      await request(`/cohorts/${cohortId}`, { method: "DELETE" });
-      setMessage("Deleted cohort.");
+      await sendRequest(`/cohorts/${cohortId}`, { method: "DELETE" });
+      setStatus("Deleted cohort. Reload homepage to see changes.");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Delete failed");
     } finally {
-      setLoading(false);
+      setBusy(false);
     }
   }
 
@@ -84,7 +80,7 @@ export function CohortActions({ cohortId, currentLabel }: { cohortId: number; cu
             value={label}
             onChange={(e) => setLabel(e.target.value)}
           />
-          <button className="rounded bg-brand-primary px-4 py-2 text-sm font-semibold text-black" disabled={loading}>
+          <button className="rounded bg-brand-primary px-4 py-2 text-sm font-semibold text-black" disabled={busy}>
             Rename
           </button>
         </div>
@@ -93,19 +89,19 @@ export function CohortActions({ cohortId, currentLabel }: { cohortId: number; cu
         <button
           className="flex-1 rounded border border-white/20 px-3 py-2 text-sm text-white"
           onClick={handleSync}
-          disabled={loading}
+          disabled={busy}
         >
           Sync now
         </button>
         <button
-          className="flex-1 rounded border border-red-500 px-3 py-2 text-sm text-red-400"
+          className="flex-1 rounded border border-red-400 px-3 py-2 text-sm text-red-400"
           onClick={handleDelete}
-          disabled={loading}
+          disabled={busy}
         >
           Delete
         </button>
       </div>
-      {message && <p className="text-sm text-green-400">{message}</p>}
+      {status && <p className="text-sm text-green-400">{status}</p>}
       {error && <p className="text-sm text-red-400">{error}</p>}
     </div>
   );
