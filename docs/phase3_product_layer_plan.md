@@ -40,6 +40,8 @@ Before writing product code, verify that the lower layers are healthy:
 
 > **API progress:** `/health`, `/cohorts`, `/cohorts/{id}`, and POST `/cohorts` now expose listings, detail payloads, and creation; next steps layer auth, sync triggers, and stats reads atop this foundation.
 
+> **Frontend progress:** Next.js app now reads `NEXT_PUBLIC_API_BASE_URL`/`NEXT_PUBLIC_API_KEY`, lists cohorts via `GET /cohorts`, and can create new cohorts by POSTing to `/cohorts/` with the API key header (temporary private-alpha flow).
+
 ## 4. Frontend/Web Experience
 
 1. **Tech choice:** start with a simple single-page app (React + Vite or Next.js). Use shared UI toolkit or Tailwind for speed.
