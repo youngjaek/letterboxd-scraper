@@ -11,6 +11,7 @@ type RankingRow = {
   score: number;
   title: string;
   slug: string;
+  poster_url: string | null;
   watchers: number | null;
   avg_rating: number | null;
   favorite_rate: number | null;
@@ -48,6 +49,19 @@ function formatAverage(value: number | null | undefined): string {
     return "—";
   }
   return value.toFixed(2);
+}
+
+function letterboxdUrl(slug: string) {
+  return `https://letterboxd.com/film/${slug}/`;
+}
+
+function StatPill({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="flex flex-col rounded-md border border-white/10 bg-black/40 px-3 py-1 text-xs text-white/90">
+      <span className="text-[0.55rem] uppercase tracking-[0.3em] text-slate-400">{label}</span>
+      <span className="text-sm font-semibold text-white">{value}</span>
+    </div>
+  );
 }
 
 export default async function CohortRankingsPage({
@@ -93,25 +107,57 @@ export default async function CohortRankingsPage({
           ) : (
             <ol>
               {rankings.map((item) => (
-                <li key={item.film_id} className="border-b border-white/5 px-6 py-4 last:border-b-0">
-                  <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-                    <div>
-                      <p className="text-lg font-medium text-white">
-                        #{item.rank ?? "?"} {item.title}
-                      </p>
-                      <p className="text-xs text-slate-500">{item.slug}</p>
+                <li key={item.film_id} className="border-b border-white/5 px-6 py-5 last:border-b-0">
+                  <div className="flex flex-col gap-4 sm:flex-row sm:gap-6">
+                    <div className="w-full max-w-[120px] flex-shrink-0">
+                      <div className="overflow-hidden rounded-lg border border-white/10 bg-black/20">
+                        {item.poster_url ? (
+                          <img
+                            src={item.poster_url}
+                            alt={`${item.title} poster`}
+                            className="h-full w-full object-cover"
+                            loading="lazy"
+                          />
+                        ) : (
+                          <div className="flex aspect-[2/3] items-center justify-center text-xs text-slate-500">
+                            No poster
+                          </div>
+                        )}
+                      </div>
                     </div>
-                    <div className="text-right text-xs uppercase text-slate-500">
-                      <p>Score {item.score.toFixed(3)}</p>
-                      <p>Distribution {item.distribution_label ?? "mixed"}</p>
+                    <div className="flex flex-1 flex-col gap-3">
+                      <div className="flex flex-col gap-1 md:flex-row md:items-baseline md:justify-between">
+                        <div>
+                          <p className="text-sm uppercase tracking-[0.3em] text-brand-accent">
+                            #{item.rank ?? "?"}
+                          </p>
+                          <Link
+                            href={letterboxdUrl(item.slug)}
+                            target="_blank"
+                            className="text-xl font-semibold text-white hover:text-brand-primary"
+                          >
+                            {item.title}
+                          </Link>
+                          <p className="text-xs text-slate-500">{item.slug}</p>
+                        </div>
+                        <div className="text-right text-xs uppercase text-slate-400">
+                          <p className="font-semibold text-white">
+                            Score <span className="text-brand-primary">{item.score.toFixed(3)}</span>
+                          </p>
+                          <p>Distribution {item.distribution_label ?? "mixed"}</p>
+                        </div>
+                      </div>
+                      <div className="flex flex-wrap gap-3">
+                        <StatPill label="Watchers" value={item.watchers?.toLocaleString() ?? "—"} />
+                        <StatPill label="Avg" value={formatAverage(item.avg_rating)} />
+                        <StatPill label="Fav %" value={formatPercent(item.favorite_rate)} />
+                        <StatPill label="Like %" value={formatPercent(item.like_rate)} />
+                        <StatPill
+                          label="Consensus"
+                          value={item.consensus_strength !== null && item.consensus_strength !== undefined ? item.consensus_strength.toFixed(2) : "—"}
+                        />
+                      </div>
                     </div>
-                  </div>
-                  <div className="mt-2 flex flex-wrap gap-x-6 gap-y-1 text-sm text-slate-300">
-                    <p>{item.watchers?.toLocaleString() ?? "—"} watchers</p>
-                    <p>Avg {formatAverage(item.avg_rating)}</p>
-                    <p>{formatPercent(item.favorite_rate)} favorites</p>
-                    <p>{formatPercent(item.like_rate)} likes</p>
-                    <p>Consensus {item.consensus_strength?.toFixed(2) ?? "—"}</p>
                   </div>
                 </li>
               ))}
