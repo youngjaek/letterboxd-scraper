@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
 from datetime import datetime, timezone
+from threading import Lock
 from typing import Dict, List, Optional, Sequence, Set
 
 from sqlalchemy import func, select
@@ -186,30 +188,49 @@ def scrape_cohort_members(
     processed = 0
     status = "success"
     error_note = None
-    for username in usernames:
+    touched_lock = Lock()
+
+    def _scrape_member(username: str):
         with get_session(settings) as session:
             telemetry_service.mark_member_started(session, run_id=run_id, username=username)
             session.commit()
         try:
             result = scrape_user_ratings(settings, username, incremental=incremental, persist=True)
-            processed += 1
-            total_entries += result.fetched
-            touched.update(result.touched_film_ids)
             with get_session(settings) as session:
                 telemetry_service.mark_member_finished(session, run_id=run_id, username=username)
                 session.commit()
+            return result
         except Exception as exc:
-            status = "failed"
-            error_note = str(exc)
             with get_session(settings) as session:
                 telemetry_service.mark_member_finished(
                     session,
                     run_id=run_id,
                     username=username,
-                    error=error_note,
+                    error=str(exc),
                 )
                 session.commit()
             raise
+
+    max_workers = max(1, settings.scraper.max_concurrency)
+    futures = {}
+    with ThreadPoolExecutor(max_workers=max_workers) as executor:
+        for username in usernames:
+            futures[executor.submit(_scrape_member, username)] = username
+        for future in as_completed(futures):
+            username = futures[future]
+            try:
+                result = future.result()
+                processed += 1
+                total_entries += result.fetched
+                with touched_lock:
+                    touched.update(result.touched_film_ids)
+            except Exception as exc:
+                status = "failed"
+                error_note = f"{username} failed: {exc}"
+                # Cancel remaining futures
+                for pending in futures:
+                    pending.cancel()
+                raise
     with get_session(settings) as session:
         telemetry_service.finalize_scrape_run(
             session,
