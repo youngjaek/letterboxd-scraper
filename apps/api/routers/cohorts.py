@@ -9,6 +9,7 @@ from sqlalchemy.orm import Session, joinedload
 from letterboxd_scraper import config, services
 from letterboxd_scraper.pipeline import tasks as pipeline_tasks
 from letterboxd_scraper.db import models
+from letterboxd_scraper.services import rankings as ranking_service
 
 from ..auth import require_api_user
 from ..dependencies import get_db_session, get_settings
@@ -108,7 +109,7 @@ def create_cohort(
 @router.get("/{cohort_id}/rankings", response_model=List[RankingItem], summary="Top rankings")
 def list_rankings(
     cohort_id: int,
-    strategy: str = "bayesian",
+    strategy: str = "cohort_affinity",
     limit: int = 25,
     session: Session = Depends(get_db_session),
 ) -> list[RankingItem]:
@@ -121,7 +122,17 @@ def list_rankings(
             f.title,
             f.slug,
             stats.watchers,
-            stats.avg_rating
+            stats.avg_rating,
+            stats.likes_count,
+            stats.favorites_count,
+            stats.high_rating_pct,
+            stats.low_rating_pct,
+            stats.count_rating_gte_4_5,
+            stats.count_rating_4_0_4_5,
+            stats.count_rating_3_5_4_0,
+            stats.count_rating_3_0_3_5,
+            stats.count_rating_2_5_3_0,
+            stats.count_rating_lt_2_5
         FROM film_rankings fr
         JOIN films f ON f.id = fr.film_id
         LEFT JOIN cohort_film_stats stats
@@ -136,18 +147,45 @@ def list_rankings(
         stmt,
         {"cohort_id": cohort_id, "strategy": strategy, "limit": limit},
     ).fetchall()
-    return [
-        RankingItem(
-            film_id=row.film_id,
-            rank=row.rank,
-            score=float(row.score) if row.score is not None else 0.0,
-            title=row.title,
-            slug=row.slug,
-            watchers=int(row.watchers) if row.watchers is not None else None,
-            avg_rating=float(row.avg_rating) if row.avg_rating is not None else None,
+    items: list[RankingItem] = []
+    for row in rows:
+        watchers = int(row.watchers) if row.watchers is not None else None
+        avg_rating = float(row.avg_rating) if row.avg_rating is not None else None
+        favorite_rate = None
+        like_rate = None
+        distribution_label = None
+        consensus_strength = None
+        if watchers and watchers > 0:
+            favorite_rate = float(row.favorites_count or 0) / watchers
+            like_rate = float(row.likes_count or 0) / watchers
+            distribution_label, _ = ranking_service.classify_distribution_label(
+                watchers=watchers,
+                count_gte_4_5=int(row.count_rating_gte_4_5 or 0),
+                count_4_0_4_5=int(row.count_rating_4_0_4_5 or 0),
+                count_3_5_4_0=int(row.count_rating_3_5_4_0 or 0),
+                count_3_0_3_5=int(row.count_rating_3_0_3_5 or 0),
+                count_2_5_3_0=int(row.count_rating_2_5_3_0 or 0),
+                count_lt_2_5=int(row.count_rating_lt_2_5 or 0),
+            )
+        if row.high_rating_pct is not None and row.low_rating_pct is not None:
+            strength = float(row.high_rating_pct) - float(row.low_rating_pct)
+            consensus_strength = max(-1.0, min(1.0, strength))
+        items.append(
+            RankingItem(
+                film_id=row.film_id,
+                rank=row.rank,
+                score=float(row.score) if row.score is not None else 0.0,
+                title=row.title,
+                slug=row.slug,
+                watchers=watchers,
+                avg_rating=avg_rating,
+                favorite_rate=favorite_rate,
+                like_rate=like_rate,
+                distribution_label=distribution_label,
+                consensus_strength=consensus_strength,
+            )
         )
-        for row in rows
-    ]
+    return items
 
 
 @router.post("/{cohort_id}/sync", summary="Run cohort pipeline")

@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import List, Optional, Sequence, Set
+from typing import Dict, List, Optional, Sequence, Set
 
 from sqlalchemy import func, select
 from sqlalchemy.orm import selectinload
@@ -234,19 +234,39 @@ def compute_rankings(
     settings: Settings,
     cohort_id: int,
     *,
-    strategy: str = "bayesian",
+    strategy: str = "cohort_affinity",
 ) -> RankingComputationResult:
-    if strategy != "bayesian":
-        raise ValueError(f"Unsupported ranking strategy '{strategy}'.")
     with get_session(settings) as session:
-        m_value = settings.cohort_defaults.m_value
-        results = ranking_service.compute_bayesian(session, cohort_id, m_value)
+        if strategy == "bayesian":
+            m_value = settings.cohort_defaults.m_value
+            results = ranking_service.compute_bayesian(session, cohort_id, m_value)
+            params: Dict[str, float | Dict[str, float]] = {"m_value": float(m_value)}
+        elif strategy == "cohort_affinity":
+            watchers_floor = settings.cohort_defaults.affinity_watchers_floor
+            results = ranking_service.compute_cohort_affinity(
+                session,
+                cohort_id,
+                watchers_floor=watchers_floor,
+            )
+            params = {
+                "watchers_floor": float(watchers_floor),
+                "weights": {
+                    "avg_rating": 0.35,
+                    "watchers": 0.20,
+                    "favorite_rate": 0.25,
+                    "like_rate": 0.10,
+                    "distribution_bonus": 0.10,
+                    "consensus_strength": 0.10,
+                },
+            }
+        else:
+            raise ValueError(f"Unsupported ranking strategy '{strategy}'.")
         ranking_service.persist_rankings(
             session,
             cohort_id,
             strategy,
             results,
-            params={"m_value": float(m_value)},
+            params=params,
         )
     return RankingComputationResult(
         cohort_id=cohort_id,

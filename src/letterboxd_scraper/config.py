@@ -54,6 +54,7 @@ class CohortDefaults:
     follow_depth: int = 1
     min_votes: int = 25
     m_value: int = 50
+    affinity_watchers_floor: int = 10
 
 
 @dataclass
@@ -150,6 +151,12 @@ def load_settings(config_path: Optional[Path] = None) -> Settings:
         follow_depth=int(os.getenv("COHORT_FOLLOW_DEPTH", cohort_cfg.get("follow_depth", 1))),
         min_votes=int(os.getenv("COHORT_MIN_VOTES", cohort_cfg.get("min_votes", 25))),
         m_value=int(os.getenv("COHORT_M_VALUE", cohort_cfg.get("m_value", 50))),
+        affinity_watchers_floor=int(
+            os.getenv(
+                "COHORT_AFFINITY_WATCHERS_FLOOR",
+                cohort_cfg.get("affinity_watchers_floor", 10),
+            )
+        ),
     )
 
     task_queue_settings = TaskQueueSettings(

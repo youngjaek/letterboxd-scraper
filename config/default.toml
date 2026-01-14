@@ -27,6 +27,7 @@ include_seed = true
 follow_depth = 1
 min_votes = 25
 m_value = 50
+affinity_watchers_floor = 10
 
 [task_queue]
 broker_url = "redis://localhost:6379/0"

@@ -27,6 +27,33 @@ This document explains how ranking results and the new percentile-based “smart
 3. **Persist canonical rows**  
    `services.rankings.persist_rankings` wipes existing rows for that `(cohort_id, strategy)` and inserts the new results into `film_rankings`, including the strategy parameters (`params` JSON) and `computed_at` timestamp. All other features and exports consume the ranks from this table.
 
+### Cohort Affinity scoring (Phase 3 default)
+
+The Phase 3 UI uses a richer “cohort_affinity” strategy that balances popularity, sentiment, and enthusiasm signals instead of relying solely on Bayesian means:
+
+- **Inputs** come from the refreshed `cohort_film_stats` view (watchers, avg rating, high/low rating percentages, histogram buckets) plus per-film like/favourite counts.
+- **Normalized features** are z-scored within the cohort so no single metric dominates:
+  - `avg_rating_z`
+  - `log_watchers_z` (log₁₀ dampens runaway blockbusters; capped at `<=1.0`)
+  - `favorite_rate_z` (`favorites/watchers`) and `like_rate_z`
+  - `consensus_strength = high_rating_pct - low_rating_pct`
+  - `distribution_bonus` derived from histogram shape labels (e.g., strong-left, bimodal).
+- **Weights** (tuned empirically):
+  ```
+  score =
+      0.35 * avg_rating_z
+    + 0.20 * log_watchers_z
+    + 0.25 * favorite_rate_z
+    + 0.10 * like_rate_z
+    + 0.10 * distribution_bonus
+    + 0.10 * consensus_strength
+  ```
+  - `distribution_bonus` = +0.30 for strongly left-skewed (majority 4½–5★), +0.15 for left-skewed, 0 for balanced, negative for right-skewed/polarized under-performers.
+  - `consensus_strength` ensures elite-but-smaller films (high ≥4★ share, low ≤2★ share) beat merely “okay but popular” entries.
+- **Filters** (coming after the strategy rollout) will let the UI slice by watchers bands (“obscure gems”), distribution labels (bimodal, strong-left, etc.), and favourite percentages without changing the canonical ranking rows.
+
+Persisted rows set `strategy='cohort_affinity'` so the API/UI can request them via `?strategy=cohort_affinity`.
+
 4. **Consumption**  
    - `rank subset` joins `film_rankings` with Letterboxd list/filmography slugs to show how a curated list fares within the cohort.
    - `export csv` emits the ranking snapshot to a CSV with titles, slugs, watchers, and average ratings.

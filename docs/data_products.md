@@ -25,37 +25,26 @@ With the scrape/enrichment pipeline in place we now have normalized tables that 
 
 ### Scoring beyond averages
 
-To make rankings predictive (e.g., “what will I likely rate?”), incorporate:
+The Phase 3 UI ships with a concrete “cohort affinity” score that bakes in popularity, like/favourite enthusiasm, and histogram shape instead of relying on a single Bayesian mean. For each `(cohort_id, film_id)` we compute:
 
-1. **Bayesian mean** (already implemented):
-   ```
-   R = cohort_avg_rating
-   v = cohort_watchers
-   m = configurable vote floor (e.g., 50)
-   C = overall cohort mean
-   score = (v/(v+m)) * R + (m/(v+m)) * C
-   ```
-2. **Engagement factors** (likes/favorite ratios):
-   - `like_rate = likes / watchers`
-   - `favorite_rate = favorites / watchers`
-3. **Distribution shape** (histogram-derived features):
-   - `variance` / `std_dev` from per-bucket counts.
-   - `skewness` to distinguish “polarizing” vs “consensus” titles.
+- `avg_rating_z`: average rating normalized per cohort.
+- `log_watchers_z`: log₁₀ of watcher counts (capped at `<=1.0`) so runaway popularity helps but cannot swamp small-yet-beloved films.
+- `favorite_rate_z` and `like_rate_z`: per-watcher enthusiasm signals with favourites weighted more heavily.
+- `consensus_strength = high_rating_pct - low_rating_pct`: keeps steady excellence ahead of mixed reactions.
+- `distribution_bonus`: derived from histogram labels (strong-left, left, balanced, right, bimodal, multimodal). Strong-left = +0.30, left = +0.15, balanced = 0, bimodal = context-dependent bonus/penalty, right-skewed = negative.
 
-An extended score might look like:
+Score formula:
 ```
-score = w_bayes * bayesian_mean
-      + w_like  * z(like_rate)
-      + w_fav   * z(favorite_rate)
-      + w_consensus * consensus_bonus
-      - w_volatility * z(std_dev)
+score =
+    0.35 * avg_rating_z
+  + 0.20 * log_watchers_z
+  + 0.25 * favorite_rate_z
+  + 0.10 * like_rate_z
+  + 0.10 * distribution_bonus
+  + 0.10 * consensus_strength
 ```
 
-Where:
-- `consensus_bonus = 1` when ≥X% of watchers rated ≥4; 0 otherwise.
-- `z()` is a z-score within the cohort to normalize features.
-
-This captures the John Wick vs Lady Bird nuance: even if averages match, John Wick’s histogram shows a massive mode at 3–4 stars with few high ratings, so its `consensus_bonus` is low and `std_dev` moderate; Lady Bird’s distribution leans more toward higher ratings, increasing the consensus bonus and lowering volatility. The ranking would therefore put Lady Bird above John Wick for cohorts that value high-end enthusiasm, while a “crowd pleaser” strategy might do the opposite (reward dense middle ratings).
+Because every component is normalized within the cohort, a film with 200 ratings at 4.3 and a huge 5★ share can outrank a 20-rating 4.7 title: the watchers term plus consensus signals outweigh a narrow average lead. Conversely, filters (“obscure gems,” “polarizing,” etc.) can zero in on low-watchers/high-favourite slices without redefining the canonical score.
 
 ### Distribution-aware predictions
 

@@ -691,7 +691,7 @@ def scrape_enrich(
 def rank_compute(
     ctx: typer.Context,
     cohort_id: int = typer.Argument(..., help="Cohort identifier."),
-    strategy: str = typer.Option("bayesian", "--strategy", "-s", help="Ranking strategy id."),
+    strategy: str = typer.Option("cohort_affinity", "--strategy", "-s", help="Ranking strategy id."),
 ) -> None:
     """Compute ranking values for a cohort."""
     settings = get_state(ctx)["settings"]
@@ -700,21 +700,42 @@ def rank_compute(
             if strategy == "bayesian":
                 m_value = settings.cohort_defaults.m_value
                 results = ranking_service.compute_bayesian(session, cohort_id, m_value)
-                ranking_service.persist_rankings(
+                params = {"m_value": float(m_value)}
+            elif strategy == "cohort_affinity":
+                watchers_floor = settings.cohort_defaults.affinity_watchers_floor
+                results = ranking_service.compute_cohort_affinity(
                     session,
                     cohort_id,
-                    strategy,
-                    results,
-                    params={"m_value": float(m_value)},
+                    watchers_floor=watchers_floor,
                 )
-                console.print(f"[green]Computed[/green] {len(results)} rankings (showing top 5):")
-                for result in results[:5]:
-                    console.print(
-                        f"#{result.rank}: film_id={result.film_id} "
-                        f"score={result.score:.3f} watchers={result.metadata['watchers']}"
-                    )
+                params = {
+                    "watchers_floor": float(watchers_floor),
+                    "weights": {
+                        "avg_rating": 0.35,
+                        "watchers": 0.20,
+                        "favorite_rate": 0.25,
+                        "like_rate": 0.10,
+                        "distribution_bonus": 0.10,
+                        "consensus_strength": 0.10,
+                    },
+                }
             else:
-                console.print(f"[yellow]TODO[/yellow]: strategy '{strategy}' not implemented yet.")
+                console.print(f"[red]Unsupported strategy[/red]: {strategy}")
+                raise typer.Exit(code=1)
+            ranking_service.persist_rankings(
+                session,
+                cohort_id,
+                strategy,
+                results,
+                params=params,
+            )
+            console.print(f"[green]Computed[/green] {len(results)} rankings (showing top 5):")
+            for result in results[:5]:
+                watchers = result.metadata.get("watchers", "-")
+                console.print(
+                    f"#{result.rank}: film_id={result.film_id} "
+                    f"score={result.score:.3f} watchers={watchers}"
+                )
 
 
 @rank_app.command("buckets")

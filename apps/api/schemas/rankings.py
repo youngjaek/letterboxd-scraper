@@ -11,3 +11,7 @@ class RankingItem(BaseModel):
     slug: str
     watchers: int | None
     avg_rating: float | None
+    favorite_rate: float | None = None
+    like_rate: float | None = None
+    distribution_label: str | None = None
+    consensus_strength: float | None = None
