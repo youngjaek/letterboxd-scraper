@@ -1,14 +1,13 @@
 from __future__ import annotations
 
-from contextlib import contextmanager
 from datetime import datetime, timezone
-import hashlib
+import time
 from decimal import Decimal
 from typing import Iterable, Optional, Set
 
-from sqlalchemy import select, text
+from sqlalchemy import select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
-from sqlalchemy.exc import IntegrityError
+from sqlalchemy.exc import IntegrityError, OperationalError
 from sqlalchemy.orm import Session
 
 from ..db import models
@@ -33,27 +32,26 @@ def get_or_create_film(
     bind = session.get_bind()
     dialect = bind.dialect.name if bind is not None else None
     if dialect == "postgresql":
-        with _film_identifier_lock(session, slug, normalized_letterboxd):
-            _ensure_film_exists_postgres(
-                session,
-                slug,
-                title,
-                normalized_tmdb,
-                normalized_letterboxd,
-                release_year,
-            )
-            film = _find_film(session, slug, normalized_letterboxd)
-            if not film:
-                raise RuntimeError(f"Film {slug} missing after insert attempt.")
-            _apply_film_metadata(
-                film,
-                slug,
-                title,
-                normalized_tmdb,
-                normalized_letterboxd,
-                release_year,
-            )
-            return film
+        _ensure_film_exists_postgres(
+            session,
+            slug,
+            title,
+            normalized_tmdb,
+            normalized_letterboxd,
+            release_year,
+        )
+        film = _find_film(session, slug, normalized_letterboxd)
+        if not film:
+            raise RuntimeError(f"Film {slug} missing after insert attempt.")
+        _apply_film_metadata(
+            film,
+            slug,
+            title,
+            normalized_tmdb,
+            normalized_letterboxd,
+            release_year,
+        )
+        return film
     return _create_film_with_savepoint(
         session,
         slug,
@@ -223,6 +221,9 @@ def _ensure_film_exists_postgres(
     letterboxd_id: Optional[int],
     release_year: Optional[int],
 ) -> None:
+    bind = session.get_bind()
+    if bind is None:
+        raise RuntimeError("No engine bound to session while inserting films.")
     values: dict[str, Optional[int | str]] = {
         "slug": slug,
         "title": title,
@@ -230,8 +231,8 @@ def _ensure_film_exists_postgres(
         "letterboxd_film_id": letterboxd_id,
         "release_year": release_year,
     }
-    insert_stmt = pg_insert(models.Film).values(values)
-    session.execute(insert_stmt.on_conflict_do_nothing())
+    insert_stmt = pg_insert(models.Film).values(values).on_conflict_do_nothing()
+    _execute_with_deadlock_retry(bind, insert_stmt)
 
 
 def _create_film_with_savepoint(
@@ -274,31 +275,32 @@ def _find_film(session: Session, slug: Optional[str], letterboxd_id: Optional[in
     return None
 
 
-@contextmanager
-def _film_identifier_lock(session: Session, slug: Optional[str], letterboxd_id: Optional[int]):
-    bind = session.get_bind()
-    if bind is None or bind.dialect.name != "postgresql":
-        yield
-        return
-    keys = _build_film_lock_keys(slug, letterboxd_id)
-    if not keys:
-        yield
-        return
-    for key in keys:
-        session.execute(text("SELECT pg_advisory_xact_lock(:key)"), {"key": key})
-    yield
+def _execute_with_deadlock_retry(
+    bind,
+    statement,
+    params: Optional[dict] = None,
+    *,
+    max_attempts: int = 5,
+    base_delay: float = 0.05,
+):
+    last_exc: Optional[Exception] = None
+    for attempt in range(max_attempts):
+        try:
+            with bind.begin() as conn:
+                return conn.execute(statement, params or {})
+        except OperationalError as exc:
+            if not _is_deadlock_error(exc) or attempt == max_attempts - 1:
+                raise
+            last_exc = exc
+            time.sleep(base_delay * (attempt + 1))
+    if last_exc:
+        raise last_exc
 
 
-def _build_film_lock_keys(slug: Optional[str], letterboxd_id: Optional[int]) -> list[int]:
-    keys: list[int] = []
-    if slug:
-        keys.append(_advisory_lock_key("slug", slug))
-    if letterboxd_id is not None:
-        keys.append(_advisory_lock_key("letterboxd", str(letterboxd_id)))
-    return sorted(set(keys))
-
-
-def _advisory_lock_key(namespace: str, value: str) -> int:
-    digest = hashlib.sha256(f"{namespace}:{value}".encode("utf-8")).digest()
-    # Use signed 64-bit integer for pg_advisory_* APIs.
-    return int.from_bytes(digest[:8], byteorder="big", signed=True)
+def _is_deadlock_error(exc: OperationalError) -> bool:
+    orig = getattr(exc, "orig", None)
+    code = getattr(orig, "pgcode", None)
+    if code == "40P01":
+        return True
+    message = str(exc).lower()
+    return "deadlock detected" in message
