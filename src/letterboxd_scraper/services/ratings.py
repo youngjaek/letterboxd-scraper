@@ -5,6 +5,7 @@ from decimal import Decimal
 from typing import Iterable, Optional, Set
 
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from ..db import models
@@ -30,27 +31,29 @@ def get_or_create_film(
         stmt = select(models.Film).where(models.Film.slug == slug)
         film = session.scalars(stmt).one_or_none()
     if film:
-        if film.slug != slug:
-            film.slug = slug
-        if title and film.title != title:
-            film.title = title
-        if normalized_tmdb and not film.tmdb_id:
-            film.tmdb_id = normalized_tmdb
-        if normalized_letterboxd and not film.letterboxd_film_id:
-            film.letterboxd_film_id = normalized_letterboxd
-        if release_year and not film.release_year:
-            film.release_year = release_year
+        _apply_film_metadata(film, slug, title, normalized_tmdb, normalized_letterboxd, release_year)
         return film
     film = models.Film(slug=slug, title=title)
-    if normalized_tmdb:
-        film.tmdb_id = normalized_tmdb
-    if normalized_letterboxd:
-        film.letterboxd_film_id = normalized_letterboxd
-    if release_year:
-        film.release_year = release_year
+    _apply_film_metadata(film, slug, title, normalized_tmdb, normalized_letterboxd, release_year)
     session.add(film)
-    session.flush()
-    return film
+    savepoint = session.begin_nested()
+    try:
+        session.flush()
+    except IntegrityError:
+        savepoint.rollback()
+        session.expunge(film)
+        existing_stmt = select(models.Film).where(models.Film.slug == slug)
+        existing = session.scalars(existing_stmt).one_or_none()
+        if not existing and normalized_letterboxd is not None:
+            existing_stmt = select(models.Film).where(models.Film.letterboxd_film_id == normalized_letterboxd)
+            existing = session.scalars(existing_stmt).one_or_none()
+        if not existing:
+            raise
+        _apply_film_metadata(existing, slug, title, normalized_tmdb, normalized_letterboxd, release_year)
+        return existing
+    else:
+        savepoint.commit()
+        return film
 
 
 def upsert_ratings(
@@ -98,6 +101,26 @@ def upsert_ratings(
     if favorite_slugs is not None:
         _sync_user_favorites(session, user.id, favorite_slugs)
     return touched
+
+
+def _apply_film_metadata(
+    film: models.Film,
+    slug: str,
+    title: str,
+    tmdb_id: Optional[int],
+    letterboxd_id: Optional[int],
+    release_year: Optional[int],
+) -> None:
+    if film.slug != slug:
+        film.slug = slug
+    if title and film.title != title:
+        film.title = title
+    if tmdb_id and not film.tmdb_id:
+        film.tmdb_id = tmdb_id
+    if letterboxd_id and not film.letterboxd_film_id:
+        film.letterboxd_film_id = letterboxd_id
+    if release_year and not film.release_year:
+        film.release_year = release_year
 
 
 def get_user_rating_snapshot(session: Session, username: str) -> dict[str, Optional[float]]:
