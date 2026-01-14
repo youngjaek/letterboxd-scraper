@@ -182,6 +182,7 @@ class Cohort(Base):
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=_utcnow, onupdate=_utcnow
     )
+    current_task_id: Mapped[Optional[str]] = mapped_column(String)
 
     members: Mapped[list["CohortMember"]] = relationship(back_populates="cohort", cascade="all, delete-orphan")
 
@@ -210,6 +211,25 @@ class ScrapeRun(Base):
     finished_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
     status: Mapped[Optional[str]] = mapped_column(String)
     notes: Mapped[Optional[str]] = mapped_column(Text)
+    members: Mapped[list["ScrapeRunMember"]] = relationship(
+        back_populates="run", cascade="all, delete-orphan"
+    )
+
+
+class ScrapeRunMember(Base):
+    __tablename__ = "scrape_run_members"
+
+    run_id: Mapped[int] = mapped_column(
+        ForeignKey("scrape_runs.id", ondelete="CASCADE"), primary_key=True
+    )
+    username: Mapped[str] = mapped_column(String, primary_key=True)
+    status: Mapped[str] = mapped_column(String, nullable=False, default="queued")
+    mode: Mapped[str] = mapped_column(String, nullable=False, default="incremental")
+    started_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
+    finished_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
+    error: Mapped[Optional[str]] = mapped_column(Text)
+
+    run: Mapped["ScrapeRun"] = relationship(back_populates="members")
 
 
 class UserScrapeState(Base):

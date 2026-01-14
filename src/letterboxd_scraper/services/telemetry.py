@@ -3,7 +3,9 @@ from __future__ import annotations
 import contextlib
 import time
 from datetime import datetime, timezone
-from typing import Iterator, Optional
+from typing import Iterable, Iterator, Optional
+
+from sqlalchemy import update
 
 from sqlalchemy.orm import Session
 
@@ -28,6 +30,59 @@ def record_scrape_run(
     session.add(run)
     session.flush()
     return run.id
+
+
+def enqueue_scrape_members(
+    session: Session,
+    *,
+    run_id: int,
+    members: Iterable[tuple[str, str]],
+) -> None:
+    """Insert queued member rows for a scrape run."""
+    for username, mode in members:
+        session.add(
+            models.ScrapeRunMember(
+                run_id=run_id,
+                username=username,
+                status="queued",
+                mode=mode,
+            )
+        )
+
+
+def mark_member_started(session: Session, *, run_id: int, username: str) -> None:
+    """Mark a member scrape as in progress."""
+    session.execute(
+        update(models.ScrapeRunMember)
+        .where(
+            models.ScrapeRunMember.run_id == run_id,
+            models.ScrapeRunMember.username == username,
+        )
+        .values(status="scraping", started_at=datetime.now(timezone.utc), error=None)
+    )
+
+
+def mark_member_finished(
+    session: Session,
+    *,
+    run_id: int,
+    username: str,
+    error: Optional[str] = None,
+) -> None:
+    """Mark a member scrape as completed or failed."""
+    status = "failed" if error else "done"
+    session.execute(
+        update(models.ScrapeRunMember)
+        .where(
+            models.ScrapeRunMember.run_id == run_id,
+            models.ScrapeRunMember.username == username,
+        )
+        .values(
+            status=status,
+            finished_at=datetime.now(timezone.utc),
+            error=error,
+        )
+    )
 
 
 def finalize_scrape_run(

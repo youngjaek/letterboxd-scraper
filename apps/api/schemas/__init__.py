@@ -6,6 +6,8 @@ from .cohorts import (
     CohortDefinition,
     CohortCreateRequest,
     CohortMemberProfile,
+    ScrapeMemberStatus,
+    ScrapeProgress,
 )
 from .rankings import RankingItem
 
@@ -15,5 +17,7 @@ __all__ = [
     "CohortDefinition",
     "CohortCreateRequest",
     "CohortMemberProfile",
+    "ScrapeMemberStatus",
+    "ScrapeProgress",
     "RankingItem",
 ]

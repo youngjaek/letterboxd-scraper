@@ -58,56 +58,65 @@ celery_app.conf.beat_schedule = {
 def run_cohort_pipeline(cohort_id: int, incremental: bool = True) -> dict:
     """Orchestrate refresh → scrape → stats → rankings → enrichment for a cohort."""
     settings = _load_settings()
-    with job_run(
-        settings,
-        "cohort_pipeline",
-        cohort_id=cohort_id,
-        payload={"incremental": incremental},
-    ):
-        refresh_result = workflow_service.refresh_cohort_membership(settings, cohort_id)
-        scrape_summary = workflow_service.scrape_cohort_members(
-            settings, cohort_id, incremental=incremental
-        )
-        stats_result = workflow_service.refresh_stats(settings, concurrently=False)
-        ranking_result = workflow_service.compute_rankings(settings, cohort_id)
-        bucket_result = workflow_service.compute_bucket_insights(settings, cohort_id)
-        film_ids = list(scrape_summary.touched_film_ids)
-        enrichment_result = workflow_service.enrich_films(
+    try:
+        with job_run(
             settings,
-            film_ids=film_ids or None,
-            limit=len(film_ids) if film_ids else 50,
-        )
-    return {
-        "refresh": {
-            "cohort_id": refresh_result.cohort_id,
-            "depth": refresh_result.depth,
-            "include_seed": refresh_result.include_seed,
-            "edges_discovered": refresh_result.edges_discovered,
-            "member_count": refresh_result.member_count,
-        },
-        "scrape": {
-            "cohort_id": scrape_summary.cohort_id,
-            "requested_members": scrape_summary.requested_members,
-            "processed_members": scrape_summary.processed_members,
-            "total_entries": scrape_summary.total_entries,
-            "touched_film_ids": sorted(scrape_summary.touched_film_ids),
-            "incremental": scrape_summary.incremental,
-        },
-        "stats": {"concurrent": stats_result.concurrently},
-        "rankings": {
-            "cohort_id": ranking_result.cohort_id,
-            "strategy": ranking_result.strategy,
-            "computed_rows": ranking_result.computed_rows,
-        },
-        "buckets": {
-            "cohort_id": bucket_result.cohort_id,
-            "strategy": bucket_result.strategy,
-            "timeframe_key": bucket_result.timeframe_key,
-            "rows": bucket_result.rows,
-            "persisted": bucket_result.persisted,
-        },
-        "enrichment": asdict(enrichment_result),
-    }
+            "cohort_pipeline",
+            cohort_id=cohort_id,
+            payload={"incremental": incremental},
+        ):
+            refresh_result = workflow_service.refresh_cohort_membership(settings, cohort_id)
+            scrape_summary = workflow_service.scrape_cohort_members(
+                settings, cohort_id, incremental=incremental
+            )
+            stats_result = workflow_service.refresh_stats(settings, concurrently=False)
+            ranking_result = workflow_service.compute_rankings(settings, cohort_id)
+            bucket_result = workflow_service.compute_bucket_insights(settings, cohort_id)
+            film_ids = list(scrape_summary.touched_film_ids)
+            enrichment_result = workflow_service.enrich_films(
+                settings,
+                film_ids=film_ids or None,
+                limit=len(film_ids) if film_ids else 50,
+            )
+        return {
+            "refresh": {
+                "cohort_id": refresh_result.cohort_id,
+                "depth": refresh_result.depth,
+                "include_seed": refresh_result.include_seed,
+                "edges_discovered": refresh_result.edges_discovered,
+                "member_count": refresh_result.member_count,
+            },
+            "scrape": {
+                "cohort_id": scrape_summary.cohort_id,
+                "requested_members": scrape_summary.requested_members,
+                "processed_members": scrape_summary.processed_members,
+                "total_entries": scrape_summary.total_entries,
+                "touched_film_ids": sorted(scrape_summary.touched_film_ids),
+                "incremental": scrape_summary.incremental,
+                "run_id": scrape_summary.run_id,
+            },
+            "stats": {"concurrent": stats_result.concurrently},
+            "rankings": {
+                "cohort_id": ranking_result.cohort_id,
+                "strategy": ranking_result.strategy,
+                "computed_rows": ranking_result.computed_rows,
+            },
+            "buckets": {
+                "cohort_id": bucket_result.cohort_id,
+                "strategy": bucket_result.strategy,
+                "timeframe_key": bucket_result.timeframe_key,
+                "rows": bucket_result.rows,
+                "persisted": bucket_result.persisted,
+            },
+            "enrichment": asdict(enrichment_result),
+        }
+    finally:
+        with get_session(settings) as session:
+            cohort = session.get(models.Cohort, cohort_id)
+            if cohort:
+                cohort.current_task_id = None
+                session.add(cohort)
+                session.commit()
 
 
 @celery_app.task(name="letterboxd.tasks.scrape_user_batch")

@@ -1,9 +1,10 @@
 from __future__ import annotations
 
+from datetime import datetime
 from typing import List
 
 from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy import func, select, text
+from sqlalchemy import desc, func, select, text
 from sqlalchemy.orm import Session, joinedload
 
 from letterboxd_scraper import config, services
@@ -20,6 +21,8 @@ from ..schemas import (
     CohortMemberProfile,
     CohortSummary,
     RankingItem,
+    ScrapeMemberStatus,
+    ScrapeProgress,
 )
 
 
@@ -35,6 +38,7 @@ def list_cohorts(session: Session = Depends(get_db_session)) -> list[CohortSumma
             models.Cohort.seed_user_id,
             models.Cohort.created_at,
             models.Cohort.updated_at,
+            models.Cohort.current_task_id,
             func.count(models.CohortMember.user_id).label("member_count"),
         )
         .outerjoin(models.CohortMember, models.CohortMember.cohort_id == models.Cohort.id)
@@ -50,6 +54,7 @@ def list_cohorts(session: Session = Depends(get_db_session)) -> list[CohortSumma
             member_count=row.member_count,
             created_at=row.created_at,
             updated_at=row.updated_at,
+            current_task_id=row.current_task_id,
         )
         for row in results
     ]
@@ -88,8 +93,72 @@ def get_cohort_detail(cohort_id: int, session: Session = Depends(get_db_session)
         member_count=len(member_profiles),
         created_at=cohort.created_at,
         updated_at=cohort.updated_at,
+        current_task_id=cohort.current_task_id,
         definition=definition,
         members=member_profiles,
+    )
+
+
+@router.get("/{cohort_id}/scrape-status", response_model=ScrapeProgress, summary="Scrape progress")
+def get_scrape_status(cohort_id: int, session: Session = Depends(get_db_session)) -> ScrapeProgress:
+    run_stmt = (
+        select(models.ScrapeRun)
+        .where(models.ScrapeRun.cohort_id == cohort_id)
+        .order_by(desc(models.ScrapeRun.started_at))
+        .limit(1)
+    )
+    run = session.scalars(run_stmt).one_or_none()
+    if not run:
+        return ScrapeProgress(status="idle")
+    members_stmt = (
+        select(models.ScrapeRunMember)
+        .where(models.ScrapeRunMember.run_id == run.id)
+        .order_by(models.ScrapeRunMember.username.asc())
+    )
+    members = session.scalars(members_stmt).all()
+    total_members = len(members)
+    completed = sum(1 for member in members if member.status == "done")
+    failed = sum(1 for member in members if member.status == "failed")
+    queued = sum(1 for member in members if member.status == "queued")
+    in_progress = [
+        ScrapeMemberStatus(
+            username=member.username,
+            status=member.status,
+            mode=member.mode,
+            started_at=member.started_at,
+            finished_at=member.finished_at,
+            error=member.error,
+        )
+        for member in members
+        if member.status == "scraping"
+    ]
+    recent_finished = [
+        ScrapeMemberStatus(
+            username=member.username,
+            status=member.status,
+            mode=member.mode,
+            started_at=member.started_at,
+            finished_at=member.finished_at,
+            error=member.error,
+        )
+        for member in members
+        if member.status in {"done", "failed"}
+    ]
+    recent_finished.sort(key=lambda item: item.finished_at or item.started_at or datetime.min, reverse=True)
+    recent_finished = recent_finished[:5]
+    status = run.status or ("running" if in_progress or queued else "done")
+    return ScrapeProgress(
+        status=status,
+        run_id=run.id,
+        run_type=run.run_type,
+        started_at=run.started_at,
+        finished_at=run.finished_at,
+        total_members=total_members,
+        completed=completed,
+        failed=failed,
+        queued=queued,
+        in_progress=in_progress,
+        recent_finished=recent_finished,
     )
 
 
@@ -208,10 +277,36 @@ def list_rankings(
 def trigger_cohort_sync(
     cohort_id: int,
     incremental: bool = True,
+    session: Session = Depends(get_db_session),
     user: models.User = Depends(require_api_user),
 ) -> dict:
+    cohort = session.get(models.Cohort, cohort_id)
+    if not cohort:
+        raise HTTPException(status_code=404, detail="Cohort not found")
+    if cohort.current_task_id:
+        raise HTTPException(status_code=409, detail="Cohort already syncing")
     result = pipeline_tasks.run_cohort_pipeline.delay(cohort_id, incremental=incremental)
+    cohort.current_task_id = result.id
+    session.commit()
     return {"task_id": result.id, "cohort_id": cohort_id, "incremental": incremental}
+
+
+@router.post("/{cohort_id}/sync/stop", summary="Stop running cohort pipeline")
+def stop_cohort_sync(
+    cohort_id: int,
+    session: Session = Depends(get_db_session),
+    user: models.User = Depends(require_api_user),
+) -> dict:
+    cohort = session.get(models.Cohort, cohort_id)
+    if not cohort:
+        raise HTTPException(status_code=404, detail="Cohort not found")
+    task_id = cohort.current_task_id
+    if not task_id:
+        raise HTTPException(status_code=409, detail="No active sync")
+    pipeline_tasks.celery_app.control.revoke(task_id, terminate=True, signal="SIGTERM")
+    cohort.current_task_id = None
+    session.commit()
+    return {"stopped_task_id": task_id, "cohort_id": cohort_id}
 
 
 @router.patch("/{cohort_id}", response_model=CohortDetail, summary="Rename cohort")

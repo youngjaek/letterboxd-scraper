@@ -2,6 +2,7 @@ import Link from "next/link";
 import { CohortActions } from "@/components/cohort-actions";
 import { CohortMembersPanel } from "@/components/cohort-members-panel";
 import { RankingStrategySelect } from "@/components/ranking-strategy-select";
+import { ScrapeProgressPanel } from "@/components/scrape-progress-panel";
 
 const apiBase = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8000";
 const defaultStrategy = "cohort_affinity";
@@ -13,7 +14,32 @@ type CohortDetail = {
   seed_username?: string | null;
   member_count: number;
   created_at: string;
+  updated_at?: string | null;
+  current_task_id?: string | null;
   members: Array<{ username: string; avatar_url: string | null }>;
+};
+
+type ScrapeMemberStatus = {
+  username: string;
+  status: string;
+  mode: string;
+  started_at?: string | null;
+  finished_at?: string | null;
+  error?: string | null;
+};
+
+type ScrapeProgress = {
+  status: string;
+  run_id: number | null;
+  run_type: string | null;
+  started_at?: string | null;
+  finished_at?: string | null;
+  total_members: number;
+  completed: number;
+  failed: number;
+  queued: number;
+  in_progress: ScrapeMemberStatus[];
+  recent_finished: ScrapeMemberStatus[];
 };
 
 type RankingRow = {
@@ -44,6 +70,14 @@ async function fetchRankings(id: string, strategy: string) {
   const res = await fetch(url, { cache: "no-store" });
   if (!res.ok) {
     return [];
+  }
+  return res.json();
+}
+
+async function fetchScrapeStatus(id: string): Promise<ScrapeProgress | null> {
+  const res = await fetch(`${apiBase}/cohorts/${id}/scrape-status`, { cache: "no-store" });
+  if (!res.ok) {
+    return null;
   }
   return res.json();
 }
@@ -96,7 +130,10 @@ export default async function CohortRankingsPage({
       </section>
     );
   }
-  const rankings: RankingRow[] = await fetchRankings(params.id, strategy);
+  const [rankings, scrapeStatus] = await Promise.all([
+    fetchRankings(params.id, strategy),
+    fetchScrapeStatus(params.id),
+  ]);
   return (
     <section className="mx-auto flex max-w-4xl flex-col gap-6">
       <div className="rounded-xl border border-white/10 bg-white/5 p-6 space-y-3">
@@ -104,6 +141,9 @@ export default async function CohortRankingsPage({
         <h1 className="text-3xl font-semibold">{cohort.label}</h1>
         <p className="text-sm text-slate-400">
           {cohort.member_count} member(s) · Created {new Date(cohort.created_at).toLocaleDateString()}
+        </p>
+        <p className="text-sm text-slate-400">
+          Last synced {cohort.updated_at ? new Date(cohort.updated_at).toLocaleString() : "never"}
         </p>
         {cohort.seed_username ? (
           <p className="text-sm text-slate-200">
@@ -117,11 +157,12 @@ export default async function CohortRankingsPage({
           ← Back to list
         </Link>
       </div>
-      <div className="rounded-xl border border-white/10 bg-white/5 p-6">
+      <div className="rounded-xl border border-white/10 bg-white/5 p-6 space-y-6">
         <div className="grid gap-6 lg:grid-cols-2">
-          <CohortActions cohortId={cohort.id} currentLabel={cohort.label} />
+          <CohortActions cohortId={cohort.id} currentLabel={cohort.label} currentTaskId={cohort.current_task_id} />
           <CohortMembersPanel members={cohort.members} />
         </div>
+        <ScrapeProgressPanel cohortId={cohort.id} initialStatus={scrapeStatus} />
       </div>
       <div className="rounded-xl border border-white/10 bg-white/5">
         <div className="flex items-center justify-between border-b border-white/10 px-6 py-4 text-xs uppercase tracking-[0.2em] text-slate-400">

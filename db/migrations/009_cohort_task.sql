@@ -1,0 +1,2 @@
+ALTER TABLE cohorts
+ADD COLUMN IF NOT EXISTS current_task_id TEXT;

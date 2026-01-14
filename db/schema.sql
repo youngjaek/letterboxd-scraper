@@ -98,7 +98,8 @@ CREATE TABLE IF NOT EXISTS cohorts (
     seed_user_id INT REFERENCES users(id),
     definition JSONB,
     created_at TIMESTAMPTZ DEFAULT NOW(),
-    updated_at TIMESTAMPTZ DEFAULT NOW()
+    updated_at TIMESTAMPTZ DEFAULT NOW(),
+    current_task_id TEXT
 );
 
 CREATE TABLE IF NOT EXISTS cohort_members (
@@ -117,6 +118,17 @@ CREATE TABLE IF NOT EXISTS scrape_runs (
     finished_at TIMESTAMPTZ,
     status TEXT,
     notes TEXT
+);
+
+CREATE TABLE IF NOT EXISTS scrape_run_members (
+    run_id INT REFERENCES scrape_runs(id) ON DELETE CASCADE,
+    username TEXT NOT NULL,
+    status TEXT NOT NULL DEFAULT 'queued',
+    mode TEXT NOT NULL DEFAULT 'incremental',
+    started_at TIMESTAMPTZ,
+    finished_at TIMESTAMPTZ,
+    error TEXT,
+    PRIMARY KEY (run_id, username)
 );
 
 CREATE TABLE IF NOT EXISTS user_scrape_state (

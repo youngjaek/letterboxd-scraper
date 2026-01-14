@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import datetime, timezone
 from typing import Dict, List, Optional, Sequence, Set
 
 from sqlalchemy import func, select
@@ -17,6 +18,7 @@ from . import insights as insight_service
 from . import ratings as rating_service
 from . import rankings as ranking_service
 from . import stats as stats_service
+from . import telemetry as telemetry_service
 from .enrichment import enrich_film_metadata, film_needs_enrichment
 from .tmdb import TMDBClient
 
@@ -39,6 +41,7 @@ class CohortScrapeSummary:
     total_entries: int
     touched_film_ids: Set[int]
     incremental: bool
+    run_id: Optional[int] = None
 
 
 @dataclass
@@ -160,6 +163,19 @@ def scrape_cohort_members(
             .order_by(models.CohortMember.depth.asc(), models.User.letterboxd_username.asc())
         )
         usernames = [row[0] for row in session.execute(stmt)]
+        run_type = "incremental" if incremental else "full"
+        run_id = telemetry_service.record_scrape_run(
+            session,
+            cohort_id=cohort_id,
+            run_type=run_type,
+            status="running",
+        )
+        telemetry_service.enqueue_scrape_members(
+            session,
+            run_id=run_id,
+            members=[(username, run_type) for username in usernames],
+        )
+        session.commit()
     if not usernames:
         raise ValueError(f"Cohort {cohort_id} has no members to scrape.")
     requested = len(usernames)
@@ -168,11 +184,44 @@ def scrape_cohort_members(
     touched: Set[int] = set()
     total_entries = 0
     processed = 0
+    status = "success"
+    error_note = None
     for username in usernames:
-        result = scrape_user_ratings(settings, username, incremental=incremental, persist=True)
-        processed += 1
-        total_entries += result.fetched
-        touched.update(result.touched_film_ids)
+        with get_session(settings) as session:
+            telemetry_service.mark_member_started(session, run_id=run_id, username=username)
+            session.commit()
+        try:
+            result = scrape_user_ratings(settings, username, incremental=incremental, persist=True)
+            processed += 1
+            total_entries += result.fetched
+            touched.update(result.touched_film_ids)
+            with get_session(settings) as session:
+                telemetry_service.mark_member_finished(session, run_id=run_id, username=username)
+                session.commit()
+        except Exception as exc:
+            status = "failed"
+            error_note = str(exc)
+            with get_session(settings) as session:
+                telemetry_service.mark_member_finished(
+                    session,
+                    run_id=run_id,
+                    username=username,
+                    error=error_note,
+                )
+                session.commit()
+            raise
+    with get_session(settings) as session:
+        telemetry_service.finalize_scrape_run(
+            session,
+            run_id,
+            status=status,
+            notes=error_note,
+        )
+        if status == "success":
+            cohort = session.get(models.Cohort, cohort_id)
+            if cohort:
+                cohort.updated_at = datetime.now(timezone.utc)
+        session.commit()
     return CohortScrapeSummary(
         cohort_id=cohort_id,
         requested_members=requested,
@@ -180,6 +229,7 @@ def scrape_cohort_members(
         total_entries=total_entries,
         touched_film_ids=touched,
         incremental=incremental,
+        run_id=run_id,
     )
 
 
