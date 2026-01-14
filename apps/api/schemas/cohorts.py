@@ -30,9 +30,15 @@ class CohortDefinition(BaseModel):
     model_config = ConfigDict(extra="allow")
 
 
+class CohortMemberProfile(BaseModel):
+    username: str
+    avatar_url: str | None = None
+
+
 class CohortDetail(CohortSummary):
     definition: CohortDefinition | None = None
-    members: list[str]
+    members: list[CohortMemberProfile]
+    seed_username: str | None = None
 
 
 class CohortCreateRequest(BaseModel):

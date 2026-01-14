@@ -1,9 +1,20 @@
 import Link from "next/link";
 import { CohortActions } from "@/components/cohort-actions";
+import { CohortMembersPanel } from "@/components/cohort-members-panel";
 import { RankingStrategySelect } from "@/components/ranking-strategy-select";
 
 const apiBase = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8000";
 const defaultStrategy = "cohort_affinity";
+
+type CohortDetail = {
+  id: number;
+  label: string;
+  seed_user_id: number | null;
+  seed_username?: string | null;
+  member_count: number;
+  created_at: string;
+  members: Array<{ username: string; avatar_url: string | null }>;
+};
 
 type RankingRow = {
   film_id: number;
@@ -20,7 +31,7 @@ type RankingRow = {
   consensus_strength: number | null;
 };
 
-async function fetchCohort(id: string) {
+async function fetchCohort(id: string): Promise<CohortDetail | null> {
   const res = await fetch(`${apiBase}/cohorts/${id}`, { cache: "no-store" });
   if (!res.ok) {
     return null;
@@ -88,85 +99,100 @@ export default async function CohortRankingsPage({
   const rankings: RankingRow[] = await fetchRankings(params.id, strategy);
   return (
     <section className="mx-auto flex max-w-4xl flex-col gap-6">
-      <div>
+      <div className="rounded-xl border border-white/10 bg-white/5 p-6 space-y-3">
         <p className="text-xs uppercase tracking-[0.3em] text-brand-accent">Cohort</p>
         <h1 className="text-3xl font-semibold">{cohort.label}</h1>
-        <p className="text-sm text-slate-400">{cohort.member_count} member(s)</p>
+        <p className="text-sm text-slate-400">
+          {cohort.member_count} member(s) · Created {new Date(cohort.created_at).toLocaleDateString()}
+        </p>
+        {cohort.seed_username ? (
+          <p className="text-sm text-slate-200">
+            Seed user{" "}
+            <span className="font-semibold text-white">@{cohort.seed_username}</span>
+          </p>
+        ) : (
+          <p className="text-sm text-slate-500">Seed user information unavailable.</p>
+        )}
         <Link href="/" className="text-xs text-brand-primary underline">
-          ← Back
+          ← Back to list
         </Link>
       </div>
-      <div className="grid gap-6 md:grid-cols-[2fr,1fr]">
-        <div className="rounded-xl border border-white/10 bg-white/5">
-          <div className="flex items-center justify-between border-b border-white/10 px-6 py-4 text-xs uppercase tracking-[0.2em] text-slate-400">
-            <span>Rankings</span>
-            <RankingStrategySelect cohortId={cohort.id} currentStrategy={strategy} />
-          </div>
-          {rankings.length === 0 ? (
-            <p className="p-6 text-sm text-slate-400">No rankings yet.</p>
-          ) : (
-            <ol>
-              {rankings.map((item) => (
-                <li key={item.film_id} className="border-b border-white/5 px-6 py-5 last:border-b-0">
-                  <div className="flex flex-col gap-4 sm:flex-row sm:gap-6">
-                    <div className="w-full max-w-[120px] flex-shrink-0">
-                      <div className="overflow-hidden rounded-lg border border-white/10 bg-black/20">
-                        {item.poster_url ? (
-                          <img
-                            src={item.poster_url}
-                            alt={`${item.title} poster`}
-                            className="h-full w-full object-cover"
-                            loading="lazy"
-                          />
-                        ) : (
-                          <div className="flex aspect-[2/3] items-center justify-center text-xs text-slate-500">
-                            No poster
-                          </div>
-                        )}
-                      </div>
-                    </div>
-                    <div className="flex flex-1 flex-col gap-3">
-                      <div className="flex flex-col gap-1 md:flex-row md:items-baseline md:justify-between">
-                        <div>
-                          <p className="text-sm uppercase tracking-[0.3em] text-brand-accent">
-                            #{item.rank ?? "?"}
-                          </p>
-                          <Link
-                            href={letterboxdUrl(item.slug)}
-                            target="_blank"
-                            className="text-xl font-semibold text-white hover:text-brand-primary"
-                          >
-                            {item.title}
-                          </Link>
-                          <p className="text-xs text-slate-500">{item.slug}</p>
-                        </div>
-                        <div className="text-right text-xs uppercase text-slate-400">
-                          <p className="font-semibold text-white">
-                            Score <span className="text-brand-primary">{item.score.toFixed(3)}</span>
-                          </p>
-                          <p>Distribution {item.distribution_label ?? "mixed"}</p>
-                        </div>
-                      </div>
-                      <div className="flex flex-wrap gap-3">
-                        <StatPill label="Watchers" value={item.watchers?.toLocaleString() ?? "—"} />
-                        <StatPill label="Avg" value={formatAverage(item.avg_rating)} />
-                        <StatPill label="Fav %" value={formatPercent(item.favorite_rate)} />
-                        <StatPill label="Like %" value={formatPercent(item.like_rate)} />
-                        <StatPill
-                          label="Consensus"
-                          value={item.consensus_strength !== null && item.consensus_strength !== undefined ? item.consensus_strength.toFixed(2) : "—"}
+      <div className="rounded-xl border border-white/10 bg-white/5 p-6">
+        <div className="grid gap-6 lg:grid-cols-2">
+          <CohortActions cohortId={cohort.id} currentLabel={cohort.label} />
+          <CohortMembersPanel members={cohort.members} />
+        </div>
+      </div>
+      <div className="rounded-xl border border-white/10 bg-white/5">
+        <div className="flex items-center justify-between border-b border-white/10 px-6 py-4 text-xs uppercase tracking-[0.2em] text-slate-400">
+          <span>Rankings</span>
+          <RankingStrategySelect cohortId={cohort.id} currentStrategy={strategy} />
+        </div>
+        {rankings.length === 0 ? (
+          <p className="p-6 text-sm text-slate-400">No rankings yet.</p>
+        ) : (
+          <ol>
+            {rankings.map((item) => (
+              <li key={item.film_id} className="border-b border-white/5 px-6 py-5 last:border-b-0">
+                <div className="flex flex-col gap-4 sm:flex-row sm:gap-6">
+                  <div className="w-full max-w-[120px] flex-shrink-0">
+                    <div className="overflow-hidden rounded-lg border border-white/10 bg-black/20">
+                      {item.poster_url ? (
+                        <img
+                          src={item.poster_url}
+                          alt={`${item.title} poster`}
+                          className="h-full w-full object-cover"
+                          loading="lazy"
                         />
-                      </div>
+                      ) : (
+                        <div className="flex aspect-[2/3] items-center justify-center text-xs text-slate-500">
+                          No poster
+                        </div>
+                      )}
                     </div>
                   </div>
-                </li>
-              ))}
-            </ol>
-          )}
-        </div>
-        <div>
-          <CohortActions cohortId={cohort.id} currentLabel={cohort.label} />
-        </div>
+                  <div className="flex flex-1 flex-col gap-3">
+                    <div className="flex flex-col gap-1 md:flex-row md:items-baseline md:justify-between">
+                      <div>
+                        <p className="text-sm uppercase tracking-[0.3em] text-brand-accent">
+                          #{item.rank ?? "?"}
+                        </p>
+                        <Link
+                          href={letterboxdUrl(item.slug)}
+                          target="_blank"
+                          className="text-xl font-semibold text-white hover:text-brand-primary"
+                        >
+                          {item.title}
+                        </Link>
+                        <p className="text-xs text-slate-500">{item.slug}</p>
+                      </div>
+                      <div className="text-right text-xs uppercase text-slate-400">
+                        <p className="font-semibold text-white">
+                          Score <span className="text-brand-primary">{item.score.toFixed(3)}</span>
+                        </p>
+                        <p>Distribution {item.distribution_label ?? "mixed"}</p>
+                      </div>
+                    </div>
+                    <div className="flex flex-wrap gap-3">
+                      <StatPill label="Watchers" value={item.watchers?.toLocaleString() ?? "—"} />
+                      <StatPill label="Avg" value={formatAverage(item.avg_rating)} />
+                      <StatPill label="Fav %" value={formatPercent(item.favorite_rate)} />
+                      <StatPill label="Like %" value={formatPercent(item.like_rate)} />
+                      <StatPill
+                        label="Consensus"
+                        value={
+                          item.consensus_strength !== null && item.consensus_strength !== undefined
+                            ? item.consensus_strength.toFixed(2)
+                            : "—"
+                        }
+                      />
+                    </div>
+                  </div>
+                </div>
+              </li>
+            ))}
+          </ol>
+        )}
       </div>
     </section>
   );

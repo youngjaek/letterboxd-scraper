@@ -17,6 +17,7 @@ from ..schemas import (
     CohortCreateRequest,
     CohortDefinition,
     CohortDetail,
+    CohortMemberProfile,
     CohortSummary,
     RankingItem,
 )
@@ -58,24 +59,37 @@ def list_cohorts(session: Session = Depends(get_db_session)) -> list[CohortSumma
 def get_cohort_detail(cohort_id: int, session: Session = Depends(get_db_session)) -> CohortDetail:
     stmt = (
         select(models.Cohort)
-        .options(joinedload(models.Cohort.members).joinedload(models.CohortMember.user))
+        .options(
+            joinedload(models.Cohort.members).joinedload(models.CohortMember.user),
+        )
         .where(models.Cohort.id == cohort_id)
     )
     cohort = session.scalars(stmt).unique().one_or_none()
     if not cohort:
         raise HTTPException(status_code=404, detail="Cohort not found")
-    member_usernames = [member.user.letterboxd_username for member in cohort.members]
+    member_profiles = [
+        CohortMemberProfile(
+            username=member.user.letterboxd_username,
+            avatar_url=member.user.avatar_url,
+        )
+        for member in cohort.members
+    ]
     definition_payload = cohort.definition if isinstance(cohort.definition, dict) else None
     definition = CohortDefinition.model_validate(definition_payload) if definition_payload else None
+    seed_username = None
+    if cohort.seed_user_id:
+        seed_user = session.get(models.User, cohort.seed_user_id)
+        seed_username = seed_user.letterboxd_username if seed_user else None
     return CohortDetail(
         id=cohort.id,
         label=cohort.label,
         seed_user_id=cohort.seed_user_id,
-        member_count=len(member_usernames),
+        seed_username=seed_username,
+        member_count=len(member_profiles),
         created_at=cohort.created_at,
         updated_at=cohort.updated_at,
         definition=definition,
-        members=member_usernames,
+        members=member_profiles,
     )
 
 
