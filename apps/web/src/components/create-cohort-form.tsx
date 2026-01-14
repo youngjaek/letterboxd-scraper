@@ -1,6 +1,7 @@
 "use client";
 
-import { useState, FormEvent } from "react";
+import { useState, FormEvent, useTransition } from "react";
+import { useRouter } from "next/navigation";
 
 const apiBase = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8000";
 const apiKey = process.env.NEXT_PUBLIC_API_KEY;
@@ -11,6 +12,8 @@ export function CreateCohortForm({ onCreated }: { onCreated?: () => void }) {
   const [isSubmitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
+  const router = useRouter();
+  const [isRefreshing, startTransition] = useTransition();
 
   async function handleSubmit(event: FormEvent) {
     event.preventDefault();
@@ -36,6 +39,9 @@ export function CreateCohortForm({ onCreated }: { onCreated?: () => void }) {
       if (onCreated) {
         onCreated();
       }
+      startTransition(() => {
+        router.refresh();
+      });
     } catch (err) {
       setError(err instanceof Error ? err.message : "Unknown error");
     } finally {
@@ -70,9 +76,9 @@ export function CreateCohortForm({ onCreated }: { onCreated?: () => void }) {
       <button
         type="submit"
         className="rounded bg-brand-primary px-4 py-2 text-sm font-semibold text-black disabled:opacity-60"
-        disabled={isSubmitting}
+        disabled={isSubmitting || isRefreshing}
       >
-        {isSubmitting ? "Creating…" : "Create cohort"}
+        {isSubmitting ? "Creating…" : isRefreshing ? "Refreshing…" : "Create cohort"}
       </button>
       {error && <p className="text-sm text-red-400">{error}</p>}
       {success && <p className="text-sm text-green-400">{success}</p>}
