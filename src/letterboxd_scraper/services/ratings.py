@@ -1,10 +1,12 @@
 from __future__ import annotations
 
+from contextlib import contextmanager
 from datetime import datetime, timezone
+import hashlib
 from decimal import Decimal
 from typing import Iterable, Optional, Set
 
-from sqlalchemy import select
+from sqlalchemy import select, text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -23,37 +25,33 @@ def get_or_create_film(
 ) -> models.Film:
     normalized_letterboxd = _normalize_letterboxd_id(letterboxd_film_id)
     normalized_tmdb = _normalize_tmdb_id(tmdb_id)
-    film = None
-    if normalized_letterboxd is not None:
-        stmt = select(models.Film).where(models.Film.letterboxd_film_id == normalized_letterboxd)
-        film = session.scalars(stmt).one_or_none()
-    if film is None:
-        stmt = select(models.Film).where(models.Film.slug == slug)
-        film = session.scalars(stmt).one_or_none()
+    film = _find_film(session, slug, normalized_letterboxd)
     if film:
         _apply_film_metadata(film, slug, title, normalized_tmdb, normalized_letterboxd, release_year)
         return film
-    film = models.Film(slug=slug, title=title)
-    _apply_film_metadata(film, slug, title, normalized_tmdb, normalized_letterboxd, release_year)
-    session.add(film)
-    savepoint = session.begin_nested()
-    try:
-        session.flush()
-    except IntegrityError:
-        savepoint.rollback()
-        session.expunge(film)
-        existing_stmt = select(models.Film).where(models.Film.slug == slug)
-        existing = session.scalars(existing_stmt).one_or_none()
-        if not existing and normalized_letterboxd is not None:
-            existing_stmt = select(models.Film).where(models.Film.letterboxd_film_id == normalized_letterboxd)
-            existing = session.scalars(existing_stmt).one_or_none()
-        if not existing:
-            raise
-        _apply_film_metadata(existing, slug, title, normalized_tmdb, normalized_letterboxd, release_year)
-        return existing
-    else:
-        savepoint.commit()
-        return film
+    with _film_identifier_lock(session, slug, normalized_letterboxd):
+        film = _find_film(session, slug, normalized_letterboxd)
+        if film:
+            _apply_film_metadata(film, slug, title, normalized_tmdb, normalized_letterboxd, release_year)
+            return film
+        film = models.Film(slug=slug, title=title)
+        _apply_film_metadata(film, slug, title, normalized_tmdb, normalized_letterboxd, release_year)
+        savepoint = session.begin_nested()
+        try:
+            session.add(film)
+            session.flush()
+        except IntegrityError:
+            savepoint.rollback()
+            if session.contains(film):
+                session.expunge(film)
+            existing = _find_film(session, slug, normalized_letterboxd)
+            if not existing:
+                raise
+            _apply_film_metadata(existing, slug, title, normalized_tmdb, normalized_letterboxd, release_year)
+            return existing
+        else:
+            savepoint.commit()
+            return film
 
 
 def upsert_ratings(
@@ -205,3 +203,48 @@ def _sync_user_favorites(
         stmt = stmt.where(~models.Film.slug.in_(favorite_slugs))
     for rating in session.scalars(stmt):
         rating.favorite = False
+
+
+def _find_film(session: Session, slug: Optional[str], letterboxd_id: Optional[int]) -> Optional[models.Film]:
+    if letterboxd_id is not None:
+        stmt = select(models.Film).where(models.Film.letterboxd_film_id == letterboxd_id)
+        film = session.scalars(stmt).one_or_none()
+        if film:
+            return film
+    if slug:
+        stmt = select(models.Film).where(models.Film.slug == slug)
+        film = session.scalars(stmt).one_or_none()
+        if film:
+            return film
+    return None
+
+
+@contextmanager
+def _film_identifier_lock(session: Session, slug: Optional[str], letterboxd_id: Optional[int]):
+    bind = session.get_bind()
+    if bind is None or bind.dialect.name != "postgresql":
+        yield
+        return
+    keys = _build_film_lock_keys(slug, letterboxd_id)
+    if not keys:
+        yield
+        return
+    for key in keys:
+        # Use transaction-scoped locks so the insert remains protected until commit.
+        session.execute(text("SELECT pg_advisory_xact_lock(:key)"), {"key": key})
+    yield
+
+
+def _build_film_lock_keys(slug: Optional[str], letterboxd_id: Optional[int]) -> list[int]:
+    keys: list[int] = []
+    if slug:
+        keys.append(_advisory_lock_key("slug", slug))
+    if letterboxd_id is not None:
+        keys.append(_advisory_lock_key("letterboxd", str(letterboxd_id)))
+    # Sort to guarantee a deterministic lock order and avoid deadlocks.
+    return sorted(set(keys))
+
+
+def _advisory_lock_key(namespace: str, value: str) -> int:
+    digest = hashlib.sha256(f"{namespace}:{value}".encode("utf-8")).digest()
+    return int.from_bytes(digest[:8], byteorder="big", signed=True)
