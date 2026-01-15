@@ -3,6 +3,12 @@ from __future__ import annotations
 from pydantic import BaseModel
 
 
+class RatingHistogramBin(BaseModel):
+    key: str
+    label: str
+    count: int
+
+
 class RankingItem(BaseModel):
     film_id: int
     rank: int | None
@@ -16,3 +22,4 @@ class RankingItem(BaseModel):
     like_rate: float | None = None
     distribution_label: str | None = None
     consensus_strength: float | None = None
+    rating_histogram: list[RatingHistogramBin] = []

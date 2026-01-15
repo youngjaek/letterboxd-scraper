@@ -3,6 +3,7 @@ import { CohortActions } from "@/components/cohort-actions";
 import { CohortMembersPanel } from "@/components/cohort-members-panel";
 import { RankingStrategySelect } from "@/components/ranking-strategy-select";
 import { ScrapeProgressPanel } from "@/components/scrape-progress-panel";
+import { RatingHistogram } from "@/components/rating-histogram";
 
 const apiBase = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8000";
 const defaultStrategy = "bayesian";
@@ -55,6 +56,7 @@ type RankingRow = {
   like_rate: number | null;
   distribution_label: string | null;
   consensus_strength: number | null;
+  rating_histogram: Array<{ key: string; label: string; count: number }>;
 };
 
 async function fetchCohort(id: string): Promise<CohortDetail | null> {
@@ -193,7 +195,7 @@ export default async function CohortRankingsPage({
                     </div>
                   </div>
                   <div className="flex flex-1 flex-col gap-3">
-                    <div className="flex flex-col gap-1 md:flex-row md:items-baseline md:justify-between">
+                    <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
                       <div>
                         <p className="text-sm uppercase tracking-[0.3em] text-brand-accent">
                           #{item.rank ?? "?"}
@@ -207,26 +209,33 @@ export default async function CohortRankingsPage({
                         </Link>
                         <p className="text-xs text-slate-500">{item.slug}</p>
                       </div>
-                      <div className="text-right text-xs uppercase text-slate-400">
+                      <div className="flex flex-col items-end gap-2 text-xs uppercase text-slate-400">
                         <p className="font-semibold text-white">
                           Score <span className="text-brand-primary">{item.score.toFixed(3)}</span>
                         </p>
                         <p>Distribution {item.distribution_label ?? "mixed"}</p>
                       </div>
                     </div>
-                    <div className="flex flex-wrap gap-3">
-                      <StatPill label="Watchers" value={item.watchers?.toLocaleString() ?? "—"} />
-                      <StatPill label="Avg" value={formatAverage(item.avg_rating)} />
-                      <StatPill label="Fav %" value={formatPercent(item.favorite_rate)} />
-                      <StatPill label="Like %" value={formatPercent(item.like_rate)} />
-                      <StatPill
-                        label="Consensus"
-                        value={
-                          item.consensus_strength !== null && item.consensus_strength !== undefined
-                            ? item.consensus_strength.toFixed(2)
-                            : "—"
-                        }
-                      />
+                    <div className="flex flex-wrap items-end gap-4">
+                      <div className="flex flex-wrap content-start gap-3">
+                        <StatPill label="Watchers" value={item.watchers?.toLocaleString() ?? "—"} />
+                        <StatPill label="Avg" value={formatAverage(item.avg_rating)} />
+                        <StatPill label="Fav %" value={formatPercent(item.favorite_rate)} />
+                        <StatPill label="Like %" value={formatPercent(item.like_rate)} />
+                        <StatPill
+                          label="Consensus"
+                          value={
+                            item.consensus_strength !== null && item.consensus_strength !== undefined
+                              ? item.consensus_strength.toFixed(2)
+                              : "—"
+                          }
+                        />
+                      </div>
+                      {item.rating_histogram?.length ? (
+                        <div className="ml-auto w-48 rounded-lg border border-white/10 bg-black/30 px-2 py-1">
+                          <RatingHistogram bins={item.rating_histogram} watchers={item.watchers} />
+                        </div>
+                      ) : null}
                     </div>
                   </div>
                 </div>

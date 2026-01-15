@@ -18,6 +18,7 @@ type RankingItem = {
   slug: string;
   watchers: number | null;
   avg_rating: number | null;
+  rating_histogram?: Array<{ key: string; label: string; count: number }>;
 };
 
 async function fetchCohorts(): Promise<CohortSummary[]> {

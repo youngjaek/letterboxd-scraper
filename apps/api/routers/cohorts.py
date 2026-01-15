@@ -198,10 +198,21 @@ def list_rankings(
 ) -> list[RankingItem]:
     stmt = text(
         """
+        WITH ranked AS (
+            SELECT
+                fr.film_id,
+                fr.rank,
+                fr.score
+            FROM film_rankings fr
+            WHERE fr.cohort_id = :cohort_id
+              AND fr.strategy = :strategy
+            ORDER BY fr.rank ASC
+            LIMIT :limit
+        )
         SELECT
-            fr.film_id,
-            fr.rank,
-            fr.score,
+            ranked.film_id,
+            ranked.rank,
+            ranked.score,
             f.title,
             f.slug,
             f.poster_url,
@@ -216,15 +227,40 @@ def list_rankings(
             stats.count_rating_3_5_4_0,
             stats.count_rating_3_0_3_5,
             stats.count_rating_2_5_3_0,
-            stats.count_rating_lt_2_5
-        FROM film_rankings fr
-        JOIN films f ON f.id = fr.film_id
+            stats.count_rating_lt_2_5,
+            hist.count_0_5,
+            hist.count_1_0,
+            hist.count_1_5,
+            hist.count_2_0,
+            hist.count_2_5,
+            hist.count_3_0,
+            hist.count_3_5,
+            hist.count_4_0,
+            hist.count_4_5,
+            hist.count_5_0
+        FROM ranked
+        JOIN films f ON f.id = ranked.film_id
         LEFT JOIN cohort_film_stats stats
-            ON stats.cohort_id = fr.cohort_id AND stats.film_id = fr.film_id
-        WHERE fr.cohort_id = :cohort_id
-          AND fr.strategy = :strategy
-        ORDER BY fr.rank ASC
-        LIMIT :limit
+            ON stats.cohort_id = :cohort_id AND stats.film_id = ranked.film_id
+        LEFT JOIN LATERAL (
+            SELECT
+                SUM(CASE WHEN r.rating = 0.5 THEN 1 ELSE 0 END) AS count_0_5,
+                SUM(CASE WHEN r.rating = 1.0 THEN 1 ELSE 0 END) AS count_1_0,
+                SUM(CASE WHEN r.rating = 1.5 THEN 1 ELSE 0 END) AS count_1_5,
+                SUM(CASE WHEN r.rating = 2.0 THEN 1 ELSE 0 END) AS count_2_0,
+                SUM(CASE WHEN r.rating = 2.5 THEN 1 ELSE 0 END) AS count_2_5,
+                SUM(CASE WHEN r.rating = 3.0 THEN 1 ELSE 0 END) AS count_3_0,
+                SUM(CASE WHEN r.rating = 3.5 THEN 1 ELSE 0 END) AS count_3_5,
+                SUM(CASE WHEN r.rating = 4.0 THEN 1 ELSE 0 END) AS count_4_0,
+                SUM(CASE WHEN r.rating = 4.5 THEN 1 ELSE 0 END) AS count_4_5,
+                SUM(CASE WHEN r.rating = 5.0 THEN 1 ELSE 0 END) AS count_5_0
+            FROM ratings r
+            JOIN cohort_members cm ON cm.user_id = r.user_id
+            WHERE cm.cohort_id = :cohort_id
+              AND r.film_id = ranked.film_id
+              AND r.rating IS NOT NULL
+        ) AS hist ON TRUE
+        ORDER BY ranked.rank ASC
         """
     )
     rows = session.execute(
@@ -254,6 +290,18 @@ def list_rankings(
         if row.high_rating_pct is not None and row.low_rating_pct is not None:
             strength = float(row.high_rating_pct) - float(row.low_rating_pct)
             consensus_strength = max(-1.0, min(1.0, strength))
+        histogram = [
+            {"key": "0_5", "label": "½★", "count": int(row.count_0_5 or 0)},
+            {"key": "1_0", "label": "1★", "count": int(row.count_1_0 or 0)},
+            {"key": "1_5", "label": "1½★", "count": int(row.count_1_5 or 0)},
+            {"key": "2_0", "label": "2★", "count": int(row.count_2_0 or 0)},
+            {"key": "2_5", "label": "2½★", "count": int(row.count_2_5 or 0)},
+            {"key": "3_0", "label": "3★", "count": int(row.count_3_0 or 0)},
+            {"key": "3_5", "label": "3½★", "count": int(row.count_3_5 or 0)},
+            {"key": "4_0", "label": "4★", "count": int(row.count_4_0 or 0)},
+            {"key": "4_5", "label": "4½★", "count": int(row.count_4_5 or 0)},
+            {"key": "5_0", "label": "5★", "count": int(row.count_5_0 or 0)},
+        ]
         items.append(
             RankingItem(
                 film_id=row.film_id,
@@ -268,6 +316,7 @@ def list_rankings(
                 like_rate=like_rate,
                 distribution_label=distribution_label,
                 consensus_strength=consensus_strength,
+                rating_histogram=histogram,
             )
         )
     return items
