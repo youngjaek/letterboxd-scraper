@@ -25,7 +25,9 @@ With the scrape/enrichment pipeline in place we now have normalized tables that 
 
 ### Scoring beyond averages
 
-The Phase 3 UI ships with a concrete “cohort affinity” score that bakes in popularity, like/favourite enthusiasm, and histogram shape instead of relying on a single Bayesian mean. For each `(cohort_id, film_id)` we compute:
+The default UI/API surface now leans on a Bayesian mean that folds in like/favourite enthusiasm (capped so tiny samples can’t spike the list). For each film we start with the traditional Bayesian weighted average and add `scale(watchers) * (0.6 * favorite_rate + 0.25 * like_rate)`, where the scale term smoothly ramps from 0 to 1 as watcher counts approach ~75.
+
+The older “cohort affinity” strategy remains available when you explicitly pick `strategy=cohort_affinity`. It bakes in histogram shape and sentiment z-scores instead of relying solely on Bayesian means:
 
 - `avg_rating_z`: average rating normalized per cohort.
 - `log_watchers_z`: log₁₀ of watcher counts (capped at `<=1.0`) so runaway popularity helps but cannot swamp small-yet-beloved films.

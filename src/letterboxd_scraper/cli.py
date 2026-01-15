@@ -691,7 +691,7 @@ def scrape_enrich(
 def rank_compute(
     ctx: typer.Context,
     cohort_id: int = typer.Argument(..., help="Cohort identifier."),
-    strategy: str = typer.Option("cohort_affinity", "--strategy", "-s", help="Ranking strategy id."),
+    strategy: str = typer.Option("bayesian", "--strategy", "-s", help="Ranking strategy id."),
 ) -> None:
     """Compute ranking values for a cohort."""
     settings = get_state(ctx)["settings"]

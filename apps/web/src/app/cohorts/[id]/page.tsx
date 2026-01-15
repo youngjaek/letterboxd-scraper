@@ -5,7 +5,7 @@ import { RankingStrategySelect } from "@/components/ranking-strategy-select";
 import { ScrapeProgressPanel } from "@/components/scrape-progress-panel";
 
 const apiBase = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8000";
-const defaultStrategy = "cohort_affinity";
+const defaultStrategy = "bayesian";
 
 type CohortDetail = {
   id: number;

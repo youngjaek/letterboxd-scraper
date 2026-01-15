@@ -192,7 +192,7 @@ def create_cohort(
 @router.get("/{cohort_id}/rankings", response_model=List[RankingItem], summary="Top rankings")
 def list_rankings(
     cohort_id: int,
-    strategy: str = "cohort_affinity",
+    strategy: str = "bayesian",
     limit: int = 25,
     session: Session = Depends(get_db_session),
 ) -> list[RankingItem]:

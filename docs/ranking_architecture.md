@@ -19,17 +19,17 @@ This document explains how ranking results and the new percentile-based “smart
 
 2. **Compute strategy scores**  
    `letterboxd-scraper rank compute <cohort_id> --strategy bayesian` runs `services.rankings.compute_bayesian`, which:
-   - Pulls `watchers` and `avg_rating` from `cohort_film_stats`.
-   - Computes a Bayesian weighted score per film using the configured `m_value`:  
-     `score = (watchers / (watchers + m)) * avg_rating + (m / (watchers + m)) * cohort_avg`.
-   - Orders films by score and assigns rank positions.
+   - Pulls `watchers`, `avg_rating`, likes, and favourites from `cohort_film_stats`.
+   - Computes a Bayesian weighted score per film using the configured `m_value`, then adds a small enthusiasm bonus that scales with favourite/like rate (and is capped for tiny watcher counts):  
+     `score = bayesian_mean + scale(watchers) * (0.6 * favorite_rate + 0.25 * like_rate)`.
+   - Orders films by the final score and assigns rank positions.
 
 3. **Persist canonical rows**  
    `services.rankings.persist_rankings` wipes existing rows for that `(cohort_id, strategy)` and inserts the new results into `film_rankings`, including the strategy parameters (`params` JSON) and `computed_at` timestamp. All other features and exports consume the ranks from this table.
 
-### Cohort Affinity scoring (Phase 3 default)
+### Cohort Affinity scoring (alternate strategy)
 
-The Phase 3 UI uses a richer “cohort_affinity” strategy that balances popularity, sentiment, and enthusiasm signals instead of relying solely on Bayesian means:
+Cohort Affinity keeps balancing popularity, sentiment, and enthusiasm signals via z-scores when you explicitly request `--strategy cohort_affinity`:
 
 - **Inputs** come from the refreshed `cohort_film_stats` view (watchers, avg rating, high/low rating percentages, histogram buckets) plus per-film like/favourite counts.
 - **Normalized features** are z-scored within the cohort so no single metric dominates:

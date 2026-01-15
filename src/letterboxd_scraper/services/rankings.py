@@ -10,6 +10,9 @@ from sqlalchemy.orm import Session
 
 from ..db import models
 
+_FAVORITE_RATE_WEIGHT = 0.6
+_LIKE_RATE_WEIGHT = 0.25
+_ENTHUSIASM_WATCHERS_BASELINE = 75.0
 
 @dataclass
 class RankingResult:
@@ -32,35 +35,58 @@ class RankedFilm:
 
 def compute_bayesian(session: Session, cohort_id: int, m_value: int) -> List[RankingResult]:
     """
-    Placeholder bayesian ranking using SQL query aggregations.
+    Compute a Bayesian weighted average with an enthusiasm bonus from favourite/like rates.
     """
     query = text(
         """
-        SELECT
-            film_id,
-            watchers,
-            avg_rating,
-            (watchers::float / (watchers + :m_value)) * avg_rating +
-            ((CAST(:m_value AS float)) / (watchers + :m_value)) * cohort_avg AS score
-        FROM cohort_film_stats
-        CROSS JOIN (
-            SELECT AVG(avg_rating) as cohort_avg
+        WITH cohort_avg AS (
+            SELECT COALESCE(AVG(avg_rating), 0) AS value
             FROM cohort_film_stats
             WHERE cohort_id = :cohort_id
-        ) c
-        WHERE cohort_id = :cohort_id
-        ORDER BY score DESC
+        )
+        SELECT
+            stats.film_id,
+            COALESCE(stats.watchers, 0) AS watchers,
+            stats.avg_rating,
+            COALESCE(stats.likes_count, 0) AS likes_count,
+            COALESCE(stats.favorites_count, 0) AS favorites_count,
+            (
+                (COALESCE(stats.watchers, 0)::float / (COALESCE(stats.watchers, 0) + :m_value))
+                    * COALESCE(stats.avg_rating, cohort_avg.value)
+                + ((CAST(:m_value AS float)) / (COALESCE(stats.watchers, 0) + :m_value)) * cohort_avg.value
+            ) AS base_score
+        FROM cohort_film_stats stats
+        CROSS JOIN cohort_avg
+        WHERE stats.cohort_id = :cohort_id
+        ORDER BY base_score DESC
         """
     )
     rows = session.execute(query, {"cohort_id": cohort_id, "m_value": m_value}).fetchall()
     results: List[RankingResult] = []
     for idx, row in enumerate(rows, start=1):
+        watchers = int(row.watchers or 0)
+        avg_rating = float(row.avg_rating) if row.avg_rating is not None else None
+        favorites = float(row.favorites_count or 0)
+        likes = float(row.likes_count or 0)
+        favorite_rate = favorites / watchers if watchers > 0 else 0.0
+        like_rate = likes / watchers if watchers > 0 else 0.0
+        enthusiasm_scale = min(1.0, watchers / _ENTHUSIASM_WATCHERS_BASELINE)
+        enthusiasm_bonus = enthusiasm_scale * (
+            _FAVORITE_RATE_WEIGHT * favorite_rate + _LIKE_RATE_WEIGHT * like_rate
+        )
+        score = float(row.base_score or 0.0) + enthusiasm_bonus
         results.append(
             RankingResult(
                 film_id=row.film_id,
-                score=row.score,
+                score=score,
                 rank=idx,
-                metadata={"watchers": row.watchers, "avg_rating": row.avg_rating},
+                metadata={
+                    "watchers": watchers,
+                    "avg_rating": avg_rating,
+                    "favorite_rate": favorite_rate,
+                    "like_rate": like_rate,
+                    "enthusiasm_bonus": enthusiasm_bonus,
+                },
             )
         )
     return results

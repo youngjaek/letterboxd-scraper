@@ -4,8 +4,8 @@ import { type ChangeEvent, useMemo } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 
 const STRATEGIES: Array<{ value: string; label: string }> = [
-  { value: "cohort_affinity", label: "Cohort Affinity" },
   { value: "bayesian", label: "Bayesian Mean" },
+  { value: "cohort_affinity", label: "Cohort Affinity" },
 ];
 
 export function RankingStrategySelect({ cohortId, currentStrategy }: { cohortId: number; currentStrategy: string }) {
@@ -17,7 +17,7 @@ export function RankingStrategySelect({ cohortId, currentStrategy }: { cohortId:
   function handleChange(event: ChangeEvent<HTMLSelectElement>) {
     const nextStrategy = event.target.value;
     const params = new URLSearchParams(searchParams?.toString() ?? "");
-    if (nextStrategy === "cohort_affinity") {
+    if (nextStrategy === "bayesian") {
       params.delete("strategy");
     } else {
       params.set("strategy", nextStrategy);

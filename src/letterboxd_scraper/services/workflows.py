@@ -305,7 +305,7 @@ def compute_rankings(
     settings: Settings,
     cohort_id: int,
     *,
-    strategy: str = "cohort_affinity",
+    strategy: str = "bayesian",
 ) -> RankingComputationResult:
     with get_session(settings) as session:
         if strategy == "bayesian":
