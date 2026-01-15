@@ -9,6 +9,11 @@ class RatingHistogramBin(BaseModel):
     count: int
 
 
+class DirectorCredit(BaseModel):
+    id: int
+    name: str
+
+
 class RankingItem(BaseModel):
     film_id: int
     rank: int | None
@@ -16,6 +21,7 @@ class RankingItem(BaseModel):
     title: str
     slug: str
     poster_url: str | None = None
+    release_year: int | None = None
     watchers: int | None
     avg_rating: float | None
     favorite_rate: float | None = None
@@ -23,6 +29,8 @@ class RankingItem(BaseModel):
     distribution_label: str | None = None
     consensus_strength: float | None = None
     rating_histogram: list[RatingHistogramBin] = []
+    directors: list[DirectorCredit] = []
+    genres: list[str] = []
 
 
 class RankingListResponse(BaseModel):

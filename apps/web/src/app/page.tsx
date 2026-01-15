@@ -16,9 +16,12 @@ type RankingItem = {
   score: number;
   title: string;
   slug: string;
+  release_year?: number | null;
   watchers: number | null;
   avg_rating: number | null;
   rating_histogram?: Array<{ key: string; label: string; count: number }>;
+  directors?: Array<{ id: number; name: string }>;
+  genres?: string[];
 };
 
 type RankingResponse = {

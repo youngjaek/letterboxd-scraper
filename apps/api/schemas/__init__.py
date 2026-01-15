@@ -15,6 +15,7 @@ from .rankings import (
     GenreOption,
     CountryOption,
     PersonOption,
+    DirectorCredit,
 )
 
 __all__ = [
@@ -30,4 +31,5 @@ __all__ = [
     "GenreOption",
     "CountryOption",
     "PersonOption",
+    "DirectorCredit",
 ]

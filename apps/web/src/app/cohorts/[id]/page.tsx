@@ -1,15 +1,12 @@
 import Link from "next/link";
-import { CohortActions } from "@/components/cohort-actions";
-import { CohortMembersPanel } from "@/components/cohort-members-panel";
+import { ManageCohortPanel } from "@/components/manage-cohort-panel";
 import { RankingStrategySelect } from "@/components/ranking-strategy-select";
-import { ScrapeProgressPanel } from "@/components/scrape-progress-panel";
 import { RatingHistogram } from "@/components/rating-histogram";
 import { RankingFilters } from "@/components/ranking-filters";
 import { PaginationControls } from "@/components/pagination-controls";
 
 const apiBase = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8000";
 const defaultStrategy = "bayesian";
-
 type CohortDetail = {
   id: number;
   label: string;
@@ -52,6 +49,7 @@ type RankingRow = {
   title: string;
   slug: string;
   poster_url: string | null;
+  release_year?: number | null;
   watchers: number | null;
   avg_rating: number | null;
   favorite_rate: number | null;
@@ -59,6 +57,8 @@ type RankingRow = {
   distribution_label: string | null;
   consensus_strength: number | null;
   rating_histogram: Array<{ key: string; label: string; count: number }>;
+  directors?: Array<{ id: number; name: string }>;
+  genres?: string[];
 };
 
 async function fetchCohort(id: string): Promise<CohortDetail | null> {
@@ -160,14 +160,15 @@ export default async function CohortRankingsPage({
   params: { id: string };
   searchParams?: Record<string, string | string[] | undefined>;
 }) {
+  const routeParams = params;
   const searchStrategy = searchParams?.strategy;
   const strategy =
     typeof searchStrategy === "string" && searchStrategy.length > 0 ? searchStrategy : defaultStrategy;
-  const cohort = await fetchCohort(params.id);
+  const cohort = await fetchCohort(routeParams.id);
   if (!cohort) {
     return (
       <section className="mx-auto max-w-4xl space-y-4 text-center text-slate-300">
-        <p>Cohort {params.id} not found.</p>
+        <p>Cohort {routeParams.id} not found.</p>
         <Link href="/" className="text-brand-primary underline">
           Back to list
         </Link>
@@ -175,8 +176,8 @@ export default async function CohortRankingsPage({
     );
   }
   const [rankingResponse, scrapeStatus] = await Promise.all([
-    fetchRankings(params.id, strategy, searchParams),
-    fetchScrapeStatus(params.id),
+    fetchRankings(routeParams.id, strategy, searchParams),
+    fetchScrapeStatus(routeParams.id),
   ]);
   const rankings: RankingRow[] = rankingResponse.items ?? [];
   const total = rankingResponse.total ?? 0;
@@ -205,13 +206,7 @@ export default async function CohortRankingsPage({
           ← Back to list
         </Link>
       </div>
-      <div className="rounded-xl border border-white/10 bg-white/5 p-6 space-y-6">
-        <div className="grid gap-6 lg:grid-cols-2">
-          <CohortActions cohortId={cohort.id} currentLabel={cohort.label} currentTaskId={cohort.current_task_id} />
-          <CohortMembersPanel members={cohort.members} />
-        </div>
-        <ScrapeProgressPanel cohortId={cohort.id} initialStatus={scrapeStatus} />
-      </div>
+      <ManageCohortPanel cohortId={cohort.id} label={cohort.label} currentTaskId={cohort.current_task_id} members={cohort.members} scrapeStatus={scrapeStatus} />
       <div className="rounded-xl border border-white/10 bg-white/5">
         <div className="flex items-center justify-between border-b border-white/10 px-6 py-4 text-xs uppercase tracking-[0.2em] text-slate-400">
           <span>Rankings</span>
@@ -223,7 +218,13 @@ export default async function CohortRankingsPage({
         ) : (
           <>
             <ol>
-              {rankings.map((item) => (
+              {rankings.map((item) => {
+                const directorNames = item.directors?.map((director) => director.name).filter(Boolean) ?? [];
+                const primaryDirectors = directorNames.slice(0, 2);
+                const extraDirectors = Math.max(0, directorNames.length - primaryDirectors.length);
+                const genreTags = item.genres ? item.genres.slice(0, 3) : [];
+                const metadataLine = item.release_year || primaryDirectors.length > 0;
+                return (
               <li key={item.film_id} className="border-b border-white/5 px-6 py-5 last:border-b-0">
                 <div className="flex flex-col gap-4 sm:flex-row sm:gap-6">
                   <div className="w-full max-w-[120px] flex-shrink-0">
@@ -244,18 +245,45 @@ export default async function CohortRankingsPage({
                   </div>
                   <div className="flex flex-1 flex-col gap-3">
                     <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
-                      <div>
+                      <div className="flex min-h-[130px] flex-1 flex-col justify-between">
                         <p className="text-sm uppercase tracking-[0.3em] text-brand-accent">
                           #{item.rank ?? "?"}
                         </p>
-                        <Link
-                          href={letterboxdUrl(item.slug)}
-                          target="_blank"
-                          className="text-xl font-semibold text-white hover:text-brand-primary"
-                        >
-                          {item.title}
-                        </Link>
+                        <div className="flex flex-wrap items-baseline gap-2">
+                          <Link
+                            href={letterboxdUrl(item.slug)}
+                            target="_blank"
+                            className="text-xl font-semibold text-white hover:text-brand-primary"
+                          >
+                            {item.title}
+                          </Link>
+                          {metadataLine ? (
+                            <span className="text-sm text-slate-300">
+                              {item.release_year ? `(${item.release_year})` : ""}
+                              {item.release_year && primaryDirectors.length ? " " : ""}
+                              {primaryDirectors.length
+                                ? `by ${primaryDirectors.join(", ")}${extraDirectors > 0 ? ` +${extraDirectors} more` : ""}`
+                                : ""}
+                            </span>
+                          ) : null}
+                        </div>
                         <p className="text-xs text-slate-500">{item.slug}</p>
+                        <div className="min-h-[24px]">
+                          {genreTags.length ? (
+                            <div className="mt-1 flex flex-wrap gap-1.5 text-[0.55rem] uppercase tracking-[0.25em] text-slate-400">
+                              {genreTags.map((genre) => (
+                                <span
+                                  key={genre}
+                                  className="rounded-full border border-white/15 px-2 py-0.5 text-slate-200/80"
+                                >
+                                  {genre}
+                                </span>
+                              ))}
+                            </div>
+                          ) : (
+                            <div className="h-4" aria-hidden="true" />
+                          )}
+                        </div>
                       </div>
                       <div className="flex flex-col items-end gap-2 text-xs uppercase text-slate-400">
                         <p className="font-semibold text-white">
@@ -264,8 +292,8 @@ export default async function CohortRankingsPage({
                         <p>Distribution {item.distribution_label ?? "mixed"}</p>
                       </div>
                     </div>
-                    <div className="flex flex-wrap items-end gap-4">
-                      <div className="flex flex-wrap content-start gap-3">
+                    <div className="flex flex-wrap items-end gap-4 min-h-[90px]">
+                      <div className="flex flex-1 flex-wrap content-start gap-3">
                         <StatPill label="Watchers" value={item.watchers?.toLocaleString() ?? "—"} />
                         <StatPill label="Avg" value={formatAverage(item.avg_rating)} />
                         <StatPill label="Fav %" value={formatPercent(item.favorite_rate)} />
@@ -288,7 +316,8 @@ export default async function CohortRankingsPage({
                   </div>
                 </div>
               </li>
-            ))}
+            );
+              })}
             </ol>
             <PaginationControls page={currentPage} totalPages={totalPages} />
           </>

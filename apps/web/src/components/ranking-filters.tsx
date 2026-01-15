@@ -95,7 +95,7 @@ function MultiSelectFilter({
     mutator(params);
     params.delete("page");
     const queryString = params.toString();
-    router.push(queryString ? `${pathname}?${queryString}` : pathname);
+    router.push(queryString ? `${pathname}?${queryString}` : pathname, { scroll: false });
   }
 
   function addOption(option: Option) {
@@ -167,81 +167,95 @@ function MultiSelectFilter({
   );
 }
 
-function YearInput({ label, paramKey }: { label: string; paramKey: string }) {
+function ReleaseYearFilters() {
   const searchParams = useSearchParams();
   const router = useRouter();
   const pathname = usePathname();
-  const rawValue = searchParams?.get(paramKey) ?? "";
-  const [value, setValue] = useState(rawValue);
+  const minRaw = searchParams?.get("release_year_min") ?? "";
+  const maxRaw = searchParams?.get("release_year_max") ?? "";
+  const decadeRaw = searchParams?.get("decade") ?? "";
+  const [minValue, setMinValue] = useState(minRaw);
+  const [maxValue, setMaxValue] = useState(maxRaw);
 
-  useEffect(() => {
-    setValue(rawValue);
-  }, [rawValue]);
+  useEffect(() => setMinValue(minRaw), [minRaw]);
+  useEffect(() => setMaxValue(maxRaw), [maxRaw]);
 
-  function commit(next: string) {
+  function commit(key: "release_year_min" | "release_year_max", value: string) {
     const params = new URLSearchParams(searchParams?.toString() ?? "");
-    const trimmed = next.trim();
+    const trimmed = value.trim();
     if (trimmed) {
-      params.set(paramKey, trimmed);
+      params.set(key, trimmed);
     } else {
-      params.delete(paramKey);
+      params.delete(key);
     }
     params.delete("page");
     const query = params.toString();
-    router.push(query ? `${pathname}?${query}` : pathname);
+    router.push(query ? `${pathname}?${query}` : pathname, { scroll: false });
   }
 
-  return (
-    <label className="flex flex-col text-xs uppercase tracking-[0.2em] text-slate-400">
-      {label}
-      <input
-        type="number"
-        min={1900}
-        max={2100}
-        value={value}
-        onChange={(event) => setValue(event.target.value)}
-        onBlur={() => commit(value)}
-        className="mt-1 rounded border border-white/10 bg-black/40 px-2 py-2 text-sm text-white focus:border-brand-primary focus:outline-none"
-      />
-    </label>
-  );
+function setDecade(value: string) {
+  const params = new URLSearchParams(searchParams?.toString() ?? "");
+  if (value) {
+    params.set("decade", value);
+  } else {
+    params.delete("decade");
+  }
+  params.delete("page");
+  const query = params.toString();
+  router.push(query ? `${pathname}?${query}` : pathname, { scroll: false });
 }
 
-function DecadeSelect() {
-  const searchParams = useSearchParams();
-  const router = useRouter();
-  const pathname = usePathname();
-  const value = searchParams?.get("decade") ?? "";
-  const decades = Array.from({ length: 12 }).map((_, index) => 1950 + index * 10);
-
-  function update(next: string) {
-    const params = new URLSearchParams(searchParams?.toString() ?? "");
-    if (next) {
-      params.set("decade", next);
-    } else {
-      params.delete("decade");
-    }
-    params.delete("page");
-    const query = params.toString();
-    router.push(query ? `${pathname}?${query}` : pathname);
-  }
+  const decades = Array.from({ length: 14 }).map((_, index) => 1900 + index * 10);
 
   return (
-    <label className="flex flex-col text-xs uppercase tracking-[0.2em] text-slate-400">
-      Decade
-      <select
-        value={value}
-        onChange={(event) => update(event.target.value)}
-        className="mt-1 rounded border border-white/10 bg-black/40 px-2 py-2 text-sm text-white focus:border-brand-primary focus:outline-none"
-      >
-        <option value="">Any</option>
-        {decades.map((decade) => (
-          <option key={decade} value={decade}>
-            {decade}s
-          </option>
-        ))}
-      </select>
-    </label>
+    <div className="flex flex-col gap-2">
+      <span className="text-[0.6rem] font-semibold uppercase tracking-[0.2em] text-slate-400">
+        Release Year
+      </span>
+      <div className="flex flex-wrap gap-3 text-xs text-slate-400">
+        <label className="flex flex-col gap-1">
+          <span>From</span>
+          <input
+            type="number"
+            min={1900}
+            max={2100}
+            value={minValue}
+            placeholder="1950"
+            onChange={(event) => setMinValue(event.target.value)}
+            onBlur={() => commit("release_year_min", minValue)}
+            className="w-28 rounded border border-white/10 bg-black/40 px-3 py-2 text-sm text-white focus:border-brand-primary focus:outline-none"
+          />
+        </label>
+        <label className="flex flex-col gap-1">
+          <span>To</span>
+          <input
+            type="number"
+            min={1900}
+            max={2100}
+            value={maxValue}
+            placeholder="2024"
+            onChange={(event) => setMaxValue(event.target.value)}
+            onBlur={() => commit("release_year_max", maxValue)}
+            className="w-28 rounded border border-white/10 bg-black/40 px-3 py-2 text-sm text-white focus:border-brand-primary focus:outline-none"
+          />
+        </label>
+        <label className="flex flex-col gap-1">
+          <span>Decade</span>
+          <select
+            value={decadeRaw}
+            onChange={(event) => setDecade(event.target.value)}
+            className="w-40 rounded border border-white/10 bg-black/40 px-3 py-2 text-sm text-white focus:border-brand-primary focus:outline-none"
+          >
+            <option value="">Any</option>
+            {decades.map((decade) => (
+              <option key={decade} value={decade}>
+                {decade}s
+              </option>
+            ))}
+          </select>
+        </label>
+      </div>
+    </div>
   );
 }
 
@@ -270,7 +284,7 @@ export function RankingFilters() {
     filterKeys.forEach((key) => params.delete(key));
     params.delete("page");
     const query = params.toString();
-    router.push(query ? `${pathname}?${query}` : pathname);
+    router.push(query ? `${pathname}?${query}` : pathname, { scroll: false });
   }
 
   return (
@@ -302,15 +316,13 @@ export function RankingFilters() {
             mapResponse={mapDirector}
           />
         </div>
-        <div className="flex flex-wrap gap-4">
-          <YearInput label="Year from" paramKey="release_year_min" />
-          <YearInput label="Year to" paramKey="release_year_max" />
-          <DecadeSelect />
+        <ReleaseYearFilters />
+        <div className="flex justify-end">
           <button
             type="button"
             onClick={clearFilters}
             disabled={!hasFilters}
-            className="self-end rounded border border-white/20 px-3 py-2 text-xs uppercase tracking-[0.2em] text-white disabled:cursor-not-allowed disabled:opacity-40"
+            className="rounded border border-white/20 px-3 py-2 text-xs uppercase tracking-[0.2em] text-white disabled:cursor-not-allowed disabled:opacity-40"
           >
             Clear filters
           </button>

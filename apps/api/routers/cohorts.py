@@ -274,6 +274,7 @@ def list_rankings(
             f.title,
             f.slug,
             f.poster_url,
+            f.release_year,
             stats.watchers,
             stats.avg_rating,
             stats.likes_count,
@@ -295,7 +296,10 @@ def list_rankings(
             hist.count_3_5,
             hist.count_4_0,
             hist.count_4_5,
-            hist.count_5_0
+            hist.count_5_0,
+            COALESCE(genre_data.genres, ARRAY[]::text[]) AS genres,
+            COALESCE(director_data.names, ARRAY[]::text[]) AS director_names,
+            COALESCE(director_data.ids, ARRAY[]::int[]) AS director_ids
         FROM film_rankings fr
         JOIN films f ON f.id = fr.film_id
         LEFT JOIN cohort_film_stats stats
@@ -318,6 +322,26 @@ def list_rankings(
               AND r.film_id = fr.film_id
               AND r.rating IS NOT NULL
         ) AS hist ON TRUE
+        LEFT JOIN LATERAL (
+            SELECT array_remove(array_agg(g.name ORDER BY g.name), NULL) AS genres
+            FROM film_genres fg
+            JOIN genres g ON g.id = fg.genre_id
+            WHERE fg.film_id = fr.film_id
+        ) AS genre_data ON TRUE
+        LEFT JOIN LATERAL (
+            SELECT
+                array_remove(
+                    array_agg(p.name ORDER BY COALESCE(fp.credit_order, 1000), p.name),
+                    NULL
+                ) AS names,
+                array_remove(
+                    array_agg(p.id ORDER BY COALESCE(fp.credit_order, 1000), p.name),
+                    NULL
+                ) AS ids
+            FROM film_people fp
+            JOIN people p ON p.id = fp.person_id
+            WHERE fp.film_id = fr.film_id AND fp.role = 'director'
+        ) AS director_data ON TRUE
         WHERE fr.cohort_id = :cohort_id
           AND fr.strategy = :strategy
         {filters_sql}
@@ -350,6 +374,7 @@ def list_rankings(
         if row.high_rating_pct is not None and row.low_rating_pct is not None:
             strength = float(row.high_rating_pct) - float(row.low_rating_pct)
             consensus_strength = max(-1.0, min(1.0, strength))
+        release_year = int(row.release_year) if row.release_year is not None else None
         histogram = [
             {"key": "0_5", "label": "½★", "count": int(row.count_0_5 or 0)},
             {"key": "1_0", "label": "1★", "count": int(row.count_1_0 or 0)},
@@ -362,6 +387,13 @@ def list_rankings(
             {"key": "4_5", "label": "4½★", "count": int(row.count_4_5 or 0)},
             {"key": "5_0", "label": "5★", "count": int(row.count_5_0 or 0)},
         ]
+        genres = [value for value in (row.genres or []) if value]
+        director_names = list(row.director_names or [])
+        director_ids = list(row.director_ids or [])
+        directors: list[dict[str, object]] = []
+        for name, director_id in zip(director_names, director_ids):
+            if name and director_id is not None:
+                directors.append({"name": name, "id": int(director_id)})
         items.append(
             RankingItem(
                 film_id=row.film_id,
@@ -370,6 +402,7 @@ def list_rankings(
                 title=row.title,
                 slug=row.slug,
                 poster_url=row.poster_url,
+                release_year=release_year,
                 watchers=watchers,
                 avg_rating=avg_rating,
                 favorite_rate=favorite_rate,
@@ -377,6 +410,8 @@ def list_rankings(
                 distribution_label=distribution_label,
                 consensus_strength=consensus_strength,
                 rating_histogram=histogram,
+                directors=directors,
+                genres=genres,
             )
         )
     return RankingListResponse(items=items, total=int(total))
