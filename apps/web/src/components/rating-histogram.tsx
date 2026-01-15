@@ -36,7 +36,7 @@ export function RatingHistogram({
       <div className="flex items-end h-[72px] overflow-hidden rounded bg-black/20">
         {orderedBins.map((bin) => {
           const pctOfMax = bin.count > 0 ? bin.count / maxCount : 0;
-          const height = bin.count > 0 ? 8 + pctOfMax * 44 : 4;
+          const height = bin.count > 0 ? Math.max(2, pctOfMax * 64) : 1;
           const pct = total > 0 ? (bin.count / total) * 100 : 0;
           return (
             <div
