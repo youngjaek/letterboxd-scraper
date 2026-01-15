@@ -4,6 +4,8 @@ import { CohortMembersPanel } from "@/components/cohort-members-panel";
 import { RankingStrategySelect } from "@/components/ranking-strategy-select";
 import { ScrapeProgressPanel } from "@/components/scrape-progress-panel";
 import { RatingHistogram } from "@/components/rating-histogram";
+import { RankingFilters } from "@/components/ranking-filters";
+import { PaginationControls } from "@/components/pagination-controls";
 
 const apiBase = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8000";
 const defaultStrategy = "bayesian";
@@ -67,13 +69,53 @@ async function fetchCohort(id: string): Promise<CohortDetail | null> {
   return res.json();
 }
 
-async function fetchRankings(id: string, strategy: string) {
-  const url = `${apiBase}/cohorts/${id}/rankings?limit=50&strategy=${encodeURIComponent(strategy)}`;
-  const res = await fetch(url, { cache: "no-store" });
-  if (!res.ok) {
+const pageSize = 25;
+
+function getParamValues(value: string | string[] | undefined): string[] {
+  if (!value) {
     return [];
   }
-  return res.json();
+  return Array.isArray(value) ? value : [value];
+}
+
+async function fetchRankings(
+  id: string,
+  strategy: string,
+  searchParams?: Record<string, string | string[] | undefined>,
+) {
+  const pageParam = searchParams?.page;
+  const currentPageRaw = Array.isArray(pageParam) ? pageParam[0] : pageParam;
+  const currentPageNum = currentPageRaw ? Math.max(1, parseInt(currentPageRaw, 10) || 1) : 1;
+  const query = new URLSearchParams();
+  query.set("strategy", strategy);
+  query.set("limit", pageSize.toString());
+  query.set("page", currentPageNum.toString());
+  const multiKeys = ["genres", "countries", "directors"];
+  multiKeys.forEach((key) => {
+    getParamValues(searchParams?.[key]).forEach((value) => {
+      if (value) {
+        query.append(key, value);
+      }
+    });
+  });
+  const singleKeys = [
+    "release_year_min",
+    "release_year_max",
+    "decade",
+  ];
+  singleKeys.forEach((key) => {
+    const raw = Array.isArray(searchParams?.[key]) ? searchParams?.[key]?.[0] : searchParams?.[key];
+    if (raw) {
+      query.set(key, raw);
+    }
+  });
+  const url = `${apiBase}/cohorts/${id}/rankings?${query.toString()}`;
+  const res = await fetch(url, { cache: "no-store" });
+  if (!res.ok) {
+    return { items: [], total: 0, page: currentPageNum };
+  }
+  const data = await res.json();
+  return { ...data, page: currentPageNum };
 }
 
 async function fetchScrapeStatus(id: string): Promise<ScrapeProgress | null> {
@@ -132,10 +174,14 @@ export default async function CohortRankingsPage({
       </section>
     );
   }
-  const [rankings, scrapeStatus] = await Promise.all([
-    fetchRankings(params.id, strategy),
+  const [rankingResponse, scrapeStatus] = await Promise.all([
+    fetchRankings(params.id, strategy, searchParams),
     fetchScrapeStatus(params.id),
   ]);
+  const rankings: RankingRow[] = rankingResponse.items ?? [];
+  const total = rankingResponse.total ?? 0;
+  const currentPage = rankingResponse.page ?? 1;
+  const totalPages = Math.max(1, Math.ceil(total / pageSize));
   return (
     <section className="mx-auto flex max-w-4xl flex-col gap-6">
       <div className="rounded-xl border border-white/10 bg-white/5 p-6 space-y-3">
@@ -171,11 +217,13 @@ export default async function CohortRankingsPage({
           <span>Rankings</span>
           <RankingStrategySelect cohortId={cohort.id} currentStrategy={strategy} />
         </div>
+        <RankingFilters />
         {rankings.length === 0 ? (
-          <p className="p-6 text-sm text-slate-400">No rankings yet.</p>
+          <p className="p-6 text-sm text-slate-400">No rankings found for the current filters.</p>
         ) : (
-          <ol>
-            {rankings.map((item) => (
+          <>
+            <ol>
+              {rankings.map((item) => (
               <li key={item.film_id} className="border-b border-white/5 px-6 py-5 last:border-b-0">
                 <div className="flex flex-col gap-4 sm:flex-row sm:gap-6">
                   <div className="w-full max-w-[120px] flex-shrink-0">
@@ -241,7 +289,9 @@ export default async function CohortRankingsPage({
                 </div>
               </li>
             ))}
-          </ol>
+            </ol>
+            <PaginationControls page={currentPage} totalPages={totalPages} />
+          </>
         )}
       </div>
     </section>

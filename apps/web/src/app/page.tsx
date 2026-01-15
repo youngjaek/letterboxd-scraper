@@ -21,6 +21,11 @@ type RankingItem = {
   rating_histogram?: Array<{ key: string; label: string; count: number }>;
 };
 
+type RankingResponse = {
+  items: RankingItem[];
+  total: number;
+};
+
 async function fetchCohorts(): Promise<CohortSummary[]> {
   const res = await fetch(`${apiBase}/cohorts`, { cache: "no-store" });
   if (!res.ok) {
@@ -30,13 +35,13 @@ async function fetchCohorts(): Promise<CohortSummary[]> {
   return res.json();
 }
 
-async function fetchRankings(cohortId: number, limit = 10): Promise<RankingItem[]> {
+async function fetchRankings(cohortId: number, limit = 10): Promise<RankingResponse> {
   const res = await fetch(`${apiBase}/cohorts/${cohortId}/rankings?limit=${limit}`, {
     cache: "no-store",
   });
   if (!res.ok) {
     console.warn("Failed to load rankings", res.status, await res.text());
-    return [];
+    return { items: [], total: 0 };
   }
   return res.json();
 }
@@ -44,7 +49,8 @@ async function fetchRankings(cohortId: number, limit = 10): Promise<RankingItem[
 export default async function Home() {
   const cohorts = await fetchCohorts();
   const featuredCohort = cohorts[0];
-  const rankings = featuredCohort ? await fetchRankings(featuredCohort.id) : [];
+  const rankingResponse = featuredCohort ? await fetchRankings(featuredCohort.id) : { items: [], total: 0 };
+  const rankings = rankingResponse.items;
   return (
     <section className="mx-auto flex max-w-5xl flex-col gap-10">
       <header className="space-y-4">

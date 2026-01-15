@@ -23,3 +23,23 @@ class RankingItem(BaseModel):
     distribution_label: str | None = None
     consensus_strength: float | None = None
     rating_histogram: list[RatingHistogramBin] = []
+
+
+class RankingListResponse(BaseModel):
+    items: list[RankingItem]
+    total: int = 0
+
+
+class GenreOption(BaseModel):
+    id: int
+    name: str
+
+
+class CountryOption(BaseModel):
+    code: str
+    name: str | None = None
+
+
+class PersonOption(BaseModel):
+    id: int
+    name: str

@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import List
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import desc, func, select, text
 from sqlalchemy.orm import Session, joinedload
 
@@ -21,6 +21,7 @@ from ..schemas import (
     CohortMemberProfile,
     CohortSummary,
     RankingItem,
+    RankingListResponse,
     ScrapeMemberStatus,
     ScrapeProgress,
 )
@@ -189,30 +190,87 @@ def create_cohort(
     return get_cohort_detail(cohort.id, session=session)
 
 
-@router.get("/{cohort_id}/rankings", response_model=List[RankingItem], summary="Top rankings")
+@router.get(
+    "/{cohort_id}/rankings",
+    response_model=RankingListResponse,
+    summary="Top rankings",
+)
 def list_rankings(
     cohort_id: int,
     strategy: str = "bayesian",
     limit: int = 25,
+    page: int = 1,
+    genres: List[int] | None = Query(None),
+    countries: List[str] | None = Query(None),
+    directors: List[int] | None = Query(None),
+    release_year_min: int | None = None,
+    release_year_max: int | None = None,
+    decade: int | None = None,
     session: Session = Depends(get_db_session),
-) -> list[RankingItem]:
-    stmt = text(
+) -> RankingListResponse:
+    limit = max(1, min(limit, 100))
+    page = max(1, page)
+    offset = (page - 1) * limit
+    params: dict[str, object] = {
+        "cohort_id": cohort_id,
+        "strategy": strategy,
+        "limit": limit,
+        "offset": offset,
+    }
+    filter_clauses: list[str] = []
+    if genres:
+        genre_ids = list({int(value) for value in genres if value is not None})
+        if genre_ids:
+            params["genre_ids"] = genre_ids
+            filter_clauses.append(
+                "EXISTS (SELECT 1 FROM film_genres fg WHERE fg.film_id = fr.film_id AND fg.genre_id = ANY(:genre_ids))"
+            )
+    if countries:
+        country_codes = list({code.upper() for code in countries if code})
+        if country_codes:
+            params["country_codes"] = country_codes
+            filter_clauses.append(
+                "EXISTS (SELECT 1 FROM film_countries fc WHERE fc.film_id = fr.film_id AND fc.country_code = ANY(:country_codes))"
+            )
+    if directors:
+        director_ids = list({int(value) for value in directors if value is not None})
+        if director_ids:
+            params["director_ids"] = director_ids
+            filter_clauses.append(
+                "EXISTS (SELECT 1 FROM film_people fp WHERE fp.film_id = fr.film_id AND fp.role = 'director' AND fp.person_id = ANY(:director_ids))"
+            )
+    if release_year_min is not None:
+        params["release_year_min"] = release_year_min
+        filter_clauses.append("f.release_year >= :release_year_min")
+    if release_year_max is not None:
+        params["release_year_max"] = release_year_max
+        filter_clauses.append("f.release_year <= :release_year_max")
+    if decade is not None:
+        decade_start = (decade // 10) * 10
+        decade_end = decade_start + 9
+        params["decade_start"] = decade_start
+        params["decade_end"] = decade_end
+        filter_clauses.append("f.release_year BETWEEN :decade_start AND :decade_end")
+    filters_sql = ""
+    if filter_clauses:
+        filters_sql = " AND " + " AND ".join(filter_clauses)
+    total_stmt = text(
+        f"""
+        SELECT COUNT(*)
+        FROM film_rankings fr
+        JOIN films f ON f.id = fr.film_id
+        WHERE fr.cohort_id = :cohort_id
+          AND fr.strategy = :strategy
+        {filters_sql}
         """
-        WITH ranked AS (
-            SELECT
-                fr.film_id,
-                fr.rank,
-                fr.score
-            FROM film_rankings fr
-            WHERE fr.cohort_id = :cohort_id
-              AND fr.strategy = :strategy
-            ORDER BY fr.rank ASC
-            LIMIT :limit
-        )
+    )
+    total = session.execute(total_stmt, params).scalar_one()
+    data_stmt = text(
+        f"""
         SELECT
-            ranked.film_id,
-            ranked.rank,
-            ranked.score,
+            fr.film_id,
+            fr.rank,
+            fr.score,
             f.title,
             f.slug,
             f.poster_url,
@@ -238,10 +296,10 @@ def list_rankings(
             hist.count_4_0,
             hist.count_4_5,
             hist.count_5_0
-        FROM ranked
-        JOIN films f ON f.id = ranked.film_id
+        FROM film_rankings fr
+        JOIN films f ON f.id = fr.film_id
         LEFT JOIN cohort_film_stats stats
-            ON stats.cohort_id = :cohort_id AND stats.film_id = ranked.film_id
+            ON stats.cohort_id = fr.cohort_id AND stats.film_id = fr.film_id
         LEFT JOIN LATERAL (
             SELECT
                 SUM(CASE WHEN r.rating = 0.5 THEN 1 ELSE 0 END) AS count_0_5,
@@ -257,16 +315,18 @@ def list_rankings(
             FROM ratings r
             JOIN cohort_members cm ON cm.user_id = r.user_id
             WHERE cm.cohort_id = :cohort_id
-              AND r.film_id = ranked.film_id
+              AND r.film_id = fr.film_id
               AND r.rating IS NOT NULL
         ) AS hist ON TRUE
-        ORDER BY ranked.rank ASC
+        WHERE fr.cohort_id = :cohort_id
+          AND fr.strategy = :strategy
+        {filters_sql}
+        ORDER BY fr.rank ASC
+        OFFSET :offset
+        LIMIT :limit
         """
     )
-    rows = session.execute(
-        stmt,
-        {"cohort_id": cohort_id, "strategy": strategy, "limit": limit},
-    ).fetchall()
+    rows = session.execute(data_stmt, params).fetchall()
     items: list[RankingItem] = []
     for row in rows:
         watchers = int(row.watchers) if row.watchers is not None else None
@@ -319,7 +379,7 @@ def list_rankings(
                 rating_histogram=histogram,
             )
         )
-    return items
+    return RankingListResponse(items=items, total=int(total))
 
 
 @router.post("/{cohort_id}/sync", summary="Run cohort pipeline")
