@@ -225,98 +225,102 @@ export default async function CohortRankingsPage({
                 const genreTags = item.genres ? item.genres.slice(0, 3) : [];
                 const metadataLine = item.release_year || primaryDirectors.length > 0;
                 return (
-              <li key={item.film_id} className="border-b border-white/5 px-6 py-5 last:border-b-0">
-                <div className="flex flex-col gap-4 sm:flex-row sm:gap-6">
-                  <div className="w-full max-w-[120px] flex-shrink-0">
-                    <div className="overflow-hidden rounded-lg border border-white/10 bg-black/20">
-                      {item.poster_url ? (
-                        <img
-                          src={item.poster_url}
-                          alt={`${item.title} poster`}
-                          className="h-full w-full object-cover"
-                          loading="lazy"
-                        />
-                      ) : (
-                        <div className="flex aspect-[2/3] items-center justify-center text-xs text-slate-500">
-                          No poster
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                  <div className="flex flex-1 flex-col gap-3">
-                    <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
-                      <div className="flex min-h-[130px] flex-1 flex-col justify-between">
-                        <p className="text-sm uppercase tracking-[0.3em] text-brand-accent">
-                          #{item.rank ?? "?"}
-                        </p>
-                        <div className="flex flex-wrap items-baseline gap-2">
-                          <Link
-                            href={letterboxdUrl(item.slug)}
-                            target="_blank"
-                            className="text-xl font-semibold text-white hover:text-brand-primary"
-                          >
-                            {item.title}
-                          </Link>
-                          {metadataLine ? (
-                            <span className="text-sm text-slate-300">
-                              {item.release_year ? `(${item.release_year})` : ""}
-                              {item.release_year && primaryDirectors.length ? " " : ""}
-                              {primaryDirectors.length
-                                ? `by ${primaryDirectors.join(", ")}${extraDirectors > 0 ? ` +${extraDirectors} more` : ""}`
-                                : ""}
-                            </span>
-                          ) : null}
-                        </div>
-                        <p className="text-xs text-slate-500">{item.slug}</p>
-                        <div className="min-h-[24px]">
-                          {genreTags.length ? (
-                            <div className="mt-1 flex flex-wrap gap-1.5 text-[0.55rem] uppercase tracking-[0.25em] text-slate-400">
-                              {genreTags.map((genre) => (
-                                <span
-                                  key={genre}
-                                  className="rounded-full border border-white/15 px-2 py-0.5 text-slate-200/80"
-                                >
-                                  {genre}
-                                </span>
-                              ))}
-                            </div>
+                  <li key={item.film_id} className="border-b border-white/5 px-6 py-5 last:border-b-0">
+                    <div className="grid gap-4 sm:grid-cols-[120px,1fr]">
+                      <div className="max-w-[120px]">
+                        <div className="overflow-hidden rounded-lg border border-white/10 bg-black/20">
+                          {item.poster_url ? (
+                            <img
+                              src={item.poster_url}
+                              alt={`${item.title} poster`}
+                              className="h-full w-full object-cover"
+                              loading="lazy"
+                            />
                           ) : (
-                            <div className="h-4" aria-hidden="true" />
+                            <div className="flex aspect-[2/3] items-center justify-center text-xs text-slate-500">
+                              No poster
+                            </div>
                           )}
                         </div>
                       </div>
-                      <div className="flex flex-col items-end gap-2 text-xs uppercase text-slate-400">
-                        <p className="font-semibold text-white">
-                          Score <span className="text-brand-primary">{item.score.toFixed(3)}</span>
-                        </p>
-                        <p>Distribution {item.distribution_label ?? "mixed"}</p>
-                      </div>
-                    </div>
-                    <div className="flex flex-wrap items-end gap-4 min-h-[90px]">
-                      <div className="flex flex-1 flex-wrap content-start gap-3">
-                        <StatPill label="Watchers" value={item.watchers?.toLocaleString() ?? "—"} />
-                        <StatPill label="Avg" value={formatAverage(item.avg_rating)} />
-                        <StatPill label="Fav %" value={formatPercent(item.favorite_rate)} />
-                        <StatPill label="Like %" value={formatPercent(item.like_rate)} />
-                        <StatPill
-                          label="Consensus"
-                          value={
-                            item.consensus_strength !== null && item.consensus_strength !== undefined
-                              ? item.consensus_strength.toFixed(2)
-                              : "—"
-                          }
-                        />
-                      </div>
-                      {item.rating_histogram?.length ? (
-                        <div className="ml-auto w-48 rounded-lg border border-white/10 bg-black/30 px-2 py-1">
-                          <RatingHistogram bins={item.rating_histogram} watchers={item.watchers} />
+                      <div className="grid gap-4 md:grid-cols-[minmax(0,1fr)_220px] md:items-start">
+                        <div className="flex h-full flex-col gap-3">
+                        <div className="space-y-1">
+                          <p className="text-sm uppercase tracking-[0.3em] text-brand-accent">
+                            #{item.rank ?? "?"}
+                          </p>
+                          <div className="flex flex-wrap items-baseline gap-2">
+                            <Link
+                              href={letterboxdUrl(item.slug)}
+                              target="_blank"
+                              className="text-xl font-semibold text-white hover:text-brand-primary"
+                            >
+                              {item.title}
+                            </Link>
+                            {metadataLine ? (
+                              <span className="text-sm text-slate-300">
+                                {item.release_year ? `(${item.release_year})` : ""}
+                                {item.release_year && primaryDirectors.length ? " " : ""}
+                                {primaryDirectors.length
+                                  ? `by ${primaryDirectors.join(", ")}${
+                                      extraDirectors > 0 ? ` +${extraDirectors} more` : ""
+                                    }`
+                                  : ""}
+                              </span>
+                            ) : null}
+                          </div>
                         </div>
-                      ) : null}
+                          <p className="text-xs text-slate-500">{item.slug}</p>
+                          <div className="min-h-[32px]">
+                            {genreTags.length ? (
+                              <div className="flex flex-wrap gap-1.5 text-[0.55rem] uppercase tracking-[0.25em] text-slate-400">
+                                {genreTags.map((genre) => (
+                                  <span
+                                    key={genre}
+                                    className="rounded-full border border-white/15 px-2 py-0.5 text-slate-200/80"
+                                  >
+                                    {genre}
+                                  </span>
+                                ))}
+                              </div>
+                            ) : (
+                              <div className="h-4" aria-hidden="true" />
+                            )}
+                          </div>
+                        <div className="mt-auto flex flex-wrap items-end gap-3">
+                          <StatPill label="Watchers" value={item.watchers?.toLocaleString() ?? "—"} />
+                          <StatPill label="Avg" value={formatAverage(item.avg_rating)} />
+                          <StatPill label="Fav %" value={formatPercent(item.favorite_rate)} />
+                          <StatPill label="Like %" value={formatPercent(item.like_rate)} />
+                          <StatPill
+                              label="Consensus"
+                              value={
+                                item.consensus_strength !== null && item.consensus_strength !== undefined
+                                  ? item.consensus_strength.toFixed(2)
+                                  : "—"
+                              }
+                            />
+                          </div>
+                        </div>
+                        <div className="flex h-full flex-col">
+                          <div className="text-right text-xs uppercase text-slate-400">
+                            <p className="font-semibold text-white">
+                              Score <span className="text-brand-primary">{item.score.toFixed(3)}</span>
+                            </p>
+                            <p>Distribution {item.distribution_label ?? "mixed"}</p>
+                          </div>
+                          <div className="mt-auto w-full rounded-lg border border-white/10 bg-black/30 px-2 py-1">
+                            {item.rating_histogram?.length ? (
+                              <RatingHistogram bins={item.rating_histogram} watchers={item.watchers} />
+                            ) : (
+                              <div className="text-center text-[0.6rem] text-slate-500">No data</div>
+                            )}
+                          </div>
+                        </div>
+                      </div>
                     </div>
-                  </div>
-                </div>
-              </li>
-            );
+                  </li>
+                );
               })}
             </ol>
             <PaginationControls page={currentPage} totalPages={totalPages} />
