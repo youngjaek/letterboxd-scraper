@@ -10,7 +10,7 @@ npm install
 npm run dev
 ```
 
-Set `NEXT_PUBLIC_API_BASE_URL` in `.env.local` (defaults to `http://localhost:8000` so it works with `uvicorn apps.api.main:app --reload`).
+Set `NEXT_PUBLIC_API_BASE_URL` in `.env.local` (defaults to `http://localhost:8000` so it works with a local `uvicorn apps.api.main:app --reload`). When you run the dev stack via `docker compose -f docker-compose.dev.yml up --build`, the `web` service automatically receives `INTERNAL_API_BASE_URL=http://api:8000` so server components can talk to the FastAPI container while the browser keeps using `NEXT_PUBLIC_API_BASE_URL`.
 
 ## Structure
 

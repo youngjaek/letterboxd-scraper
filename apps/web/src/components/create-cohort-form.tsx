@@ -2,8 +2,9 @@
 
 import { useState, FormEvent, useTransition } from "react";
 import { useRouter } from "next/navigation";
+import { getApiBase } from "@/lib/api-base";
 
-const apiBase = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8000";
+const apiBase = getApiBase();
 const apiKey = process.env.NEXT_PUBLIC_API_KEY;
 
 export function CreateCohortForm({ onCreated }: { onCreated?: () => void }) {

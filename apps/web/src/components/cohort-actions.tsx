@@ -2,8 +2,9 @@
 
 import { useRouter } from "next/navigation";
 import { useState, FormEvent } from "react";
+import { getApiBase } from "@/lib/api-base";
 
-const apiBase = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8000";
+const apiBase = getApiBase();
 const apiKey = process.env.NEXT_PUBLIC_API_KEY;
 
 async function sendRequest(path: string, init: RequestInit = {}) {

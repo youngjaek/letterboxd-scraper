@@ -100,12 +100,12 @@ Each command respects configuration passed via `.env`, environment variables, or
    pytest
    ```
 
-## Running background services
+## Running the dev stack
 
-Start Redis and the Celery worker via Docker Compose so API-triggered syncs and UI actions work end-to-end:
+Bring up Redis, the Celery worker, FastAPI API, and the Next.js frontend in one terminal:
 
 ```bash
-docker compose -f docker-compose.dev.yml up --build redis celery-worker
+docker compose -f docker-compose.dev.yml up --build
 ```
 
-Leave that terminal running. Then launch the API (`uvicorn apps.api.main:app --reload`) and frontend (`cd apps/web && npm run dev`) in separate shells.
+The command exposes the API at [http://localhost:8000](http://localhost:8000) and the frontend at [http://localhost:3000](http://localhost:3000). Hot reload works because the repo is bind-mounted into each container. Hit `Ctrl+C` to stop all services at once.

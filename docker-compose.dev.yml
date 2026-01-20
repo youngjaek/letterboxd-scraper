@@ -23,5 +23,41 @@ services:
       - redis
     working_dir: /app
 
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    command: uvicorn apps.api.main:app --reload --host 0.0.0.0 --port 8000
+    env_file:
+      - .env.docker
+    environment:
+      - LETTERBOXD_CONFIG=/app/config/default.toml
+      - TASK_QUEUE_BROKER_URL=redis://redis:6379/0
+      - TASK_QUEUE_RESULT_BACKEND=redis://redis:6379/1
+    volumes:
+      - .:/app
+    working_dir: /app
+    ports:
+      - "8000:8000"
+    depends_on:
+      - redis
+
+  web:
+    image: node:20
+    working_dir: /app/apps/web
+    command: bash -lc "npm install && npm run dev -- --hostname 0.0.0.0 --port 3000"
+    env_file:
+      - apps/web/.env.local
+    environment:
+      - NEXT_TELEMETRY_DISABLED=1
+      - INTERNAL_API_BASE_URL=http://api:8000
+      - CHOKIDAR_USEPOLLING=1
+    ports:
+      - "3000:3000"
+    volumes:
+      - .:/app
+    depends_on:
+      - api
+
 volumes:
   redis-data:

@@ -1,7 +1,8 @@
 import { CreateCohortForm } from "@/components/create-cohort-form";
 import Link from "next/link";
+import { serverApiBase } from "@/lib/api-base";
 
-const apiBase = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8000";
+const apiBase = serverApiBase;
 
 type CohortSummary = {
   id: number;
@@ -122,9 +123,11 @@ export default async function Home() {
         </div>
       </div>
       <footer className="text-sm text-slate-400">
-        Backend running? Start via
-        <code className="mx-2 rounded bg-black/40 px-2 py-1 text-xs">uvicorn apps.api.main:app --reload</code>
-        and ensure `NEXT_PUBLIC_API_BASE_URL` targets it.
+        Backend running? Start everything with
+        <code className="mx-2 rounded bg-black/40 px-2 py-1 text-xs">
+          docker compose -f docker-compose.dev.yml up --build
+        </code>
+        (API on 8000, web on 3000) or point `NEXT_PUBLIC_API_BASE_URL` at a manually started FastAPI server.
       </footer>
     </section>
   );

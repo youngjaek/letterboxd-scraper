@@ -1,8 +1,9 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
+import { getApiBase } from "@/lib/api-base";
 
-const apiBase = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8000";
+const apiBase = getApiBase();
 const apiKey = process.env.NEXT_PUBLIC_API_KEY;
 
 type ScrapeMemberStatus = {
@@ -70,6 +71,8 @@ export function ScrapeProgressPanel({
   const percent = total > 0 ? Math.round((completed / total) * 100) : 0;
   const activeList = (status?.in_progress ?? []).slice(0, 5);
   const recent = (status?.recent_finished ?? []).slice(0, 5);
+  const queued = status?.queued ?? 0;
+  const failed = status?.failed ?? 0;
   const subtitle =
     displayStatus === "running"
       ? `Scraping ${completed}/${total}`
@@ -88,8 +91,8 @@ export function ScrapeProgressPanel({
       </div>
       <div className="mt-3 flex flex-wrap gap-4 text-xs text-slate-300">
         <span>Completed: {completed}</span>
-        <span>Queued: {status.queued}</span>
-        <span>Failed: {status.failed}</span>
+        <span>Queued: {queued}</span>
+        <span>Failed: {failed}</span>
       </div>
       {activeList.length > 0 && (
         <div className="mt-4">

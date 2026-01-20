@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
+import { getApiBase } from "@/lib/api-base";
 
 type Option = {
   value: string;
@@ -9,7 +10,7 @@ type Option = {
   hint?: string | null;
 };
 
-const apiBase = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8000";
+const apiBase = getApiBase();
 
 function useSelectedOptions(
   values: string[],
@@ -167,6 +168,42 @@ function MultiSelectFilter({
   );
 }
 
+function formatReleaseYearRange(min: string, max: string) {
+  if (min && max) {
+    return min === max ? min : `${min}..${max}`;
+  }
+  if (min) {
+    return `${min}..`;
+  }
+  if (max) {
+    return `..${max}`;
+  }
+  return "";
+}
+
+function normalizeYearToken(token: string) {
+  const trimmed = token.trim();
+  if (!trimmed) {
+    return "";
+  }
+  return /^\d{4}$/.test(trimmed) ? trimmed : "";
+}
+
+function parseReleaseYearRange(value: string) {
+  const trimmed = value.trim();
+  if (!trimmed) {
+    return { min: "", max: "" };
+  }
+  if (!trimmed.includes("..")) {
+    const year = normalizeYearToken(trimmed);
+    return year ? { min: year, max: year } : { min: "", max: "" };
+  }
+  const [startRaw = "", endRaw = ""] = trimmed.split("..");
+  const min = normalizeYearToken(startRaw);
+  const max = normalizeYearToken(endRaw);
+  return { min, max };
+}
+
 function ReleaseYearFilters() {
   const searchParams = useSearchParams();
   const router = useRouter();
@@ -174,36 +211,41 @@ function ReleaseYearFilters() {
   const minRaw = searchParams?.get("release_year_min") ?? "";
   const maxRaw = searchParams?.get("release_year_max") ?? "";
   const decadeRaw = searchParams?.get("decade") ?? "";
-  const [minValue, setMinValue] = useState(minRaw);
-  const [maxValue, setMaxValue] = useState(maxRaw);
+  const computedRangeValue = useMemo(() => formatReleaseYearRange(minRaw, maxRaw), [minRaw, maxRaw]);
+  const [rangeValue, setRangeValue] = useState(computedRangeValue);
 
-  useEffect(() => setMinValue(minRaw), [minRaw]);
-  useEffect(() => setMaxValue(maxRaw), [maxRaw]);
+  useEffect(() => setRangeValue(computedRangeValue), [computedRangeValue]);
 
-  function commit(key: "release_year_min" | "release_year_max", value: string) {
+  function commitRange(value: string) {
     const params = new URLSearchParams(searchParams?.toString() ?? "");
-    const trimmed = value.trim();
-    if (trimmed) {
-      params.set(key, trimmed);
+    const parsed = parseReleaseYearRange(value);
+    if (parsed.min) {
+      params.set("release_year_min", parsed.min);
     } else {
-      params.delete(key);
+      params.delete("release_year_min");
     }
+    if (parsed.max) {
+      params.set("release_year_max", parsed.max);
+    } else {
+      params.delete("release_year_max");
+    }
+    setRangeValue(formatReleaseYearRange(parsed.min, parsed.max));
     params.delete("page");
     const query = params.toString();
     router.push(query ? `${pathname}?${query}` : pathname, { scroll: false });
   }
 
-function setDecade(value: string) {
-  const params = new URLSearchParams(searchParams?.toString() ?? "");
-  if (value) {
-    params.set("decade", value);
-  } else {
-    params.delete("decade");
+  function setDecade(value: string) {
+    const params = new URLSearchParams(searchParams?.toString() ?? "");
+    if (value) {
+      params.set("decade", value);
+    } else {
+      params.delete("decade");
+    }
+    params.delete("page");
+    const query = params.toString();
+    router.push(query ? `${pathname}?${query}` : pathname, { scroll: false });
   }
-  params.delete("page");
-  const query = params.toString();
-  router.push(query ? `${pathname}?${query}` : pathname, { scroll: false });
-}
 
   const decades = Array.from({ length: 14 }).map((_, index) => 1900 + index * 10);
 
@@ -214,29 +256,20 @@ function setDecade(value: string) {
       </span>
       <div className="flex flex-wrap gap-3 text-xs text-slate-400">
         <label className="flex flex-col gap-1">
-          <span>From</span>
+          <span>Year / Range</span>
           <input
-            type="number"
-            min={1900}
-            max={2100}
-            value={minValue}
-            placeholder="1950"
-            onChange={(event) => setMinValue(event.target.value)}
-            onBlur={() => commit("release_year_min", minValue)}
-            className="w-28 rounded border border-white/10 bg-black/40 px-3 py-2 text-sm text-white focus:border-brand-primary focus:outline-none"
-          />
-        </label>
-        <label className="flex flex-col gap-1">
-          <span>To</span>
-          <input
-            type="number"
-            min={1900}
-            max={2100}
-            value={maxValue}
-            placeholder="2024"
-            onChange={(event) => setMaxValue(event.target.value)}
-            onBlur={() => commit("release_year_max", maxValue)}
-            className="w-28 rounded border border-white/10 bg-black/40 px-3 py-2 text-sm text-white focus:border-brand-primary focus:outline-none"
+            type="text"
+            value={rangeValue}
+            placeholder="1954 or 1920..1954"
+            onChange={(event) => setRangeValue(event.target.value)}
+            onBlur={() => commitRange(rangeValue)}
+            onKeyDown={(event) => {
+              if (event.key === "Enter") {
+                event.preventDefault();
+                commitRange(rangeValue);
+              }
+            }}
+            className="w-40 rounded border border-white/10 bg-black/40 px-3 py-2 text-sm text-white focus:border-brand-primary focus:outline-none"
           />
         </label>
         <label className="flex flex-col gap-1">

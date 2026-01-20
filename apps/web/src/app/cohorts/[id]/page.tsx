@@ -4,8 +4,9 @@ import { RankingStrategySelect } from "@/components/ranking-strategy-select";
 import { RatingHistogram } from "@/components/rating-histogram";
 import { RankingFilters } from "@/components/ranking-filters";
 import { PaginationControls } from "@/components/pagination-controls";
+import { serverApiBase } from "@/lib/api-base";
 
-const apiBase = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8000";
+const apiBase = serverApiBase;
 const defaultStrategy = "bayesian";
 type CohortDetail = {
   id: number;
