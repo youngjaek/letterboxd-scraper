@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, useTransition } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { getApiBase } from "@/lib/api-base";
 
@@ -11,6 +11,16 @@ type Option = {
 };
 
 const apiBase = getApiBase();
+const distributionOptions: Option[] = [
+  { value: "strong-left", label: "Strong Left", hint: "4½★ spikes" },
+  { value: "left", label: "Left Skew", hint: "≥60% ≥4★" },
+  { value: "balanced", label: "Balanced", hint: "3–4★ bulk" },
+  { value: "bimodal-low-high", label: "Bimodal ±", hint: "Love vs hate" },
+  { value: "bimodal-mid", label: "Bimodal Mid", hint: "Middle hump" },
+  { value: "right", label: "Right Skew", hint: "Low-star heavy" },
+  { value: "mixed", label: "Mixed", hint: "No clear skew" },
+  { value: "unknown", label: "Unknown", hint: "No data" },
+];
 
 function useSelectedOptions(
   values: string[],
@@ -292,6 +302,114 @@ function ReleaseYearFilters() {
   );
 }
 
+function DistributionFilter() {
+  const searchParams = useSearchParams();
+  const router = useRouter();
+  const pathname = usePathname();
+  const selectedValue = searchParams?.get("distribution") ?? "";
+  const [optimisticValue, setOptimisticValue] = useState<string | undefined>();
+  const [isPending, startTransition] = useTransition();
+  const activeValue = optimisticValue ?? selectedValue;
+  const prefetchedUrls = useRef<Set<string>>(new Set());
+  const prefetchedAll = useRef(false);
+
+  useEffect(() => {
+    setOptimisticValue(undefined);
+  }, [selectedValue]);
+
+  const buildUrl = useCallback(
+    (value: string) => {
+      const params = new URLSearchParams(searchParams?.toString() ?? "");
+      if (value) {
+        params.set("distribution", value);
+      } else {
+        params.delete("distribution");
+      }
+      params.delete("page");
+      const query = params.toString();
+      return query ? `${pathname}?${query}` : pathname;
+    },
+    [searchParams, pathname],
+  );
+
+  const prefetchUrl = useCallback(
+    (url: string) => {
+      if (prefetchedUrls.current.has(url)) {
+        return;
+      }
+      prefetchedUrls.current.add(url);
+      router.prefetch(url);
+    },
+    [router],
+  );
+
+  const ensurePrefetchAll = useCallback(() => {
+    if (prefetchedAll.current) {
+      return;
+    }
+    prefetchedAll.current = true;
+    const targets = ["", ...distributionOptions.map((option) => option.value)];
+    targets.forEach((value) => prefetchUrl(buildUrl(value)));
+  }, [buildUrl, prefetchUrl]);
+
+  function toggle(value: string) {
+    ensurePrefetchAll();
+    const nextValue = activeValue === value ? "" : value;
+    setOptimisticValue(nextValue);
+    startTransition(() => {
+      const url = buildUrl(nextValue);
+      router.push(url, { scroll: false });
+    });
+  }
+
+  function handlePrefetch(value: string) {
+    ensurePrefetchAll();
+    const nextValue = activeValue === value ? "" : value;
+    prefetchUrl(buildUrl(nextValue));
+  }
+
+  return (
+    <div
+      className="flex flex-col gap-2"
+      onMouseEnter={ensurePrefetchAll}
+      onFocusCapture={ensurePrefetchAll}
+      onTouchStart={ensurePrefetchAll}
+    >
+      <span className="text-[0.6rem] font-semibold uppercase tracking-[0.2em] text-slate-400">
+        Distribution
+      </span>
+      <div className="flex flex-wrap gap-2">
+        {distributionOptions.map((option) => {
+          const isActive = activeValue === option.value;
+          const baseClasses =
+            "flex min-w-[120px] flex-1 flex-col rounded border px-3 py-2 text-left text-xs transition";
+          const stateClasses = isActive
+            ? "border-brand-primary bg-brand-primary/10 text-white"
+            : "border-white/15 text-slate-200 hover:border-white/30 hover:text-white";
+          return (
+            <button
+              key={option.value}
+              type="button"
+              onClick={() => toggle(option.value)}
+              onMouseEnter={() => handlePrefetch(option.value)}
+              onFocus={() => handlePrefetch(option.value)}
+              disabled={isPending && optimisticValue === option.value}
+              className={`${baseClasses} ${stateClasses}`}
+            >
+              <span className="text-sm font-semibold">{option.label}</span>
+              {option.hint ? (
+                <span className="text-[0.6rem] uppercase tracking-[0.25em] text-slate-400">
+                  {option.hint}
+                </span>
+              ) : null}
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 export function RankingFilters() {
   const searchParams = useSearchParams();
   const router = useRouter();
@@ -300,6 +418,7 @@ export function RankingFilters() {
     "genres",
     "countries",
     "directors",
+    "distribution",
     "release_year_min",
     "release_year_max",
     "decade",
@@ -350,6 +469,7 @@ export function RankingFilters() {
           />
         </div>
         <ReleaseYearFilters />
+        <DistributionFilter />
         <div className="flex justify-end">
           <button
             type="button"

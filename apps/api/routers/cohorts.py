@@ -10,8 +10,6 @@ from sqlalchemy.orm import Session, joinedload
 from letterboxd_scraper import config, services
 from letterboxd_scraper.pipeline import tasks as pipeline_tasks
 from letterboxd_scraper.db import models
-from letterboxd_scraper.services import rankings as ranking_service
-
 from ..auth import require_api_user
 from ..dependencies import get_db_session, get_settings
 from ..schemas import (
@@ -28,6 +26,68 @@ from ..schemas import (
 
 
 router = APIRouter(prefix="/cohorts", tags=["cohorts"])
+
+DISTRIBUTION_LABELS = [
+    "unknown",
+    "strong-left",
+    "left",
+    "right",
+    "bimodal-low-high",
+    "bimodal-mid",
+    "balanced",
+    "mixed",
+]
+
+DISTRIBUTION_LABEL_SQL = """
+CASE
+    WHEN COALESCE(stats.watchers, 0) <= 0 THEN 'unknown'
+    WHEN (
+        COALESCE(stats.count_rating_gte_4_5, 0)::float / NULLIF(stats.watchers::float, 0) >= 0.4
+        AND (
+            (COALESCE(stats.count_rating_2_5_3_0, 0) + COALESCE(stats.count_rating_lt_2_5, 0))::float
+            / NULLIF(stats.watchers::float, 0)
+        ) <= 0.1
+    ) THEN 'strong-left'
+    WHEN (
+        (
+            COALESCE(stats.count_rating_gte_4_5, 0) + COALESCE(stats.count_rating_4_0_4_5, 0)
+        )::float / NULLIF(stats.watchers::float, 0) >= 0.6
+        AND (
+            (COALESCE(stats.count_rating_2_5_3_0, 0) + COALESCE(stats.count_rating_lt_2_5, 0))::float
+            / NULLIF(stats.watchers::float, 0)
+        ) <= 0.15
+    ) THEN 'left'
+    WHEN (
+        (
+            COALESCE(stats.count_rating_2_5_3_0, 0) + COALESCE(stats.count_rating_lt_2_5, 0)
+        )::float / NULLIF(stats.watchers::float, 0) >= 0.45
+        AND (
+            COALESCE(stats.count_rating_gte_4_5, 0) + COALESCE(stats.count_rating_4_0_4_5, 0)
+        )::float / NULLIF(stats.watchers::float, 0) <= 0.2
+    ) THEN 'right'
+    WHEN (
+        (
+            COALESCE(stats.count_rating_2_5_3_0, 0) + COALESCE(stats.count_rating_lt_2_5, 0)
+        )::float / NULLIF(stats.watchers::float, 0) >= 0.35
+        AND (
+            COALESCE(stats.count_rating_gte_4_5, 0) + COALESCE(stats.count_rating_4_0_4_5, 0)
+        )::float / NULLIF(stats.watchers::float, 0) >= 0.25
+    ) THEN 'bimodal-low-high'
+    WHEN (
+        COALESCE(stats.count_rating_3_0_3_5, 0)::float / NULLIF(stats.watchers::float, 0) >= 0.25
+        AND COALESCE(stats.count_rating_3_5_4_0, 0)::float / NULLIF(stats.watchers::float, 0) >= 0.25
+    ) THEN 'bimodal-mid'
+    WHEN (
+        (
+            COALESCE(stats.count_rating_3_5_4_0, 0) + COALESCE(stats.count_rating_3_0_3_5, 0)
+        )::float / NULLIF(stats.watchers::float, 0) >= 0.6
+        AND (
+            COALESCE(stats.count_rating_2_5_3_0, 0) + COALESCE(stats.count_rating_lt_2_5, 0)
+        )::float / NULLIF(stats.watchers::float, 0) <= 0.2
+    ) THEN 'balanced'
+    ELSE 'mixed'
+END
+""".strip()
 
 
 @router.get("/", response_model=List[CohortSummary], summary="List cohorts")
@@ -203,6 +263,7 @@ def list_rankings(
     genres: List[int] | None = Query(None),
     countries: List[str] | None = Query(None),
     directors: List[int] | None = Query(None),
+    distribution: str | None = Query(None),
     release_year_min: int | None = None,
     release_year_max: int | None = None,
     decade: int | None = None,
@@ -239,6 +300,17 @@ def list_rankings(
             filter_clauses.append(
                 "EXISTS (SELECT 1 FROM film_people fp WHERE fp.film_id = fr.film_id AND fp.role = 'director' AND fp.person_id = ANY(:director_ids))"
             )
+    if distribution:
+        normalized_label = distribution.strip().lower()
+        if not normalized_label:
+            raise HTTPException(status_code=400, detail="Distribution label cannot be empty.")
+        if normalized_label not in DISTRIBUTION_LABELS:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Invalid distribution label '{distribution}'. Allowed: {', '.join(DISTRIBUTION_LABELS)}",
+            )
+        params["distribution_label"] = normalized_label
+        filter_clauses.append(f"({DISTRIBUTION_LABEL_SQL}) = :distribution_label")
     if release_year_min is not None:
         params["release_year_min"] = release_year_min
         filter_clauses.append("f.release_year >= :release_year_min")
@@ -259,6 +331,8 @@ def list_rankings(
         SELECT COUNT(*)
         FROM film_rankings fr
         JOIN films f ON f.id = fr.film_id
+        LEFT JOIN cohort_film_stats stats
+            ON stats.cohort_id = fr.cohort_id AND stats.film_id = fr.film_id
         WHERE fr.cohort_id = :cohort_id
           AND fr.strategy = :strategy
         {filters_sql}
@@ -297,6 +371,7 @@ def list_rankings(
             hist.count_4_0,
             hist.count_4_5,
             hist.count_5_0,
+            {DISTRIBUTION_LABEL_SQL} AS distribution_label,
             COALESCE(genre_data.genres, ARRAY[]::text[]) AS genres,
             COALESCE(director_data.names, ARRAY[]::text[]) AS director_names,
             COALESCE(director_data.ids, ARRAY[]::int[]) AS director_ids
@@ -357,20 +432,11 @@ def list_rankings(
         avg_rating = float(row.avg_rating) if row.avg_rating is not None else None
         favorite_rate = None
         like_rate = None
-        distribution_label = None
+        distribution_label = row.distribution_label
         consensus_strength = None
         if watchers and watchers > 0:
             favorite_rate = float(row.favorites_count or 0) / watchers
             like_rate = float(row.likes_count or 0) / watchers
-            distribution_label, _ = ranking_service.classify_distribution_label(
-                watchers=watchers,
-                count_gte_4_5=int(row.count_rating_gte_4_5 or 0),
-                count_4_0_4_5=int(row.count_rating_4_0_4_5 or 0),
-                count_3_5_4_0=int(row.count_rating_3_5_4_0 or 0),
-                count_3_0_3_5=int(row.count_rating_3_0_3_5 or 0),
-                count_2_5_3_0=int(row.count_rating_2_5_3_0 or 0),
-                count_lt_2_5=int(row.count_rating_lt_2_5 or 0),
-            )
         if row.high_rating_pct is not None and row.low_rating_pct is not None:
             strength = float(row.high_rating_pct) - float(row.low_rating_pct)
             consensus_strength = max(-1.0, min(1.0, strength))
