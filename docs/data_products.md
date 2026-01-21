@@ -25,7 +25,11 @@ With the scrape/enrichment pipeline in place we now have normalized tables that 
 
 ### Scoring beyond averages
 
-The default UI/API surface now leans on a Bayesian mean that folds in like/favourite enthusiasm (capped so tiny samples can’t spike the list). For each film we start with the traditional Bayesian weighted average and add `scale(watchers) * (0.6 * favorite_rate + 0.25 * like_rate)`, where the scale term smoothly ramps from 0 to 1 as watcher counts approach ~75.
+The default UI/API surface now leans on a Bayesian foundation but layers in popularity and consensus bonuses so attention-heavy titles outrank equally rated deep cuts. For each film we start with the traditional Bayesian weighted average, add the enthusiasm term `scale(watchers) * (0.6 * favorite_rate + 0.25 * like_rate)`, then tack on:
+
+- `0.25 * log_watchers_z`: the z-score of `log10(watchers)` so genuinely popular films climb ahead of similarly rated obscurities.
+- `0.15 * distribution_bonus`: histogram-derived skew labels (strong-left, left, balanced, bimodal, right) translated into ±0.15 bumps.
+- `0.10 * consensus_strength`: difference between ≥4★ and ≤2★ share so steady acclaim beats noisy splits.
 
 The older “cohort affinity” strategy remains available when you explicitly pick `strategy=cohort_affinity`. It bakes in histogram shape and sentiment z-scores instead of relying solely on Bayesian means:
 

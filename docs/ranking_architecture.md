@@ -19,10 +19,21 @@ This document explains how ranking results and the new percentile-based “smart
 
 2. **Compute strategy scores**  
    `letterboxd-scraper rank compute <cohort_id> --strategy bayesian` runs `services.rankings.compute_bayesian`, which:
-   - Pulls `watchers`, `avg_rating`, likes, and favourites from `cohort_film_stats`.
-   - Computes a Bayesian weighted score per film using the configured `m_value`, then adds a small enthusiasm bonus that scales with favourite/like rate (and is capped for tiny watcher counts):  
-     `score = bayesian_mean + scale(watchers) * (0.6 * favorite_rate + 0.25 * like_rate)`.
-   - Orders films by the final score and assigns rank positions.
+   - Pulls per-film aggregates from `cohort_film_stats` (watchers, average rating, like/favourite counts, high/low rating share, histogram buckets).
+   - Starts with the Bayesian weighted average using the configured `m_value`, then layers in popularity and consensus signals:  
+     ```
+     score =
+         bayesian_mean
+       + enthusiasm_scale(watchers) * (0.6 * favorite_rate + 0.25 * like_rate)
+       + 0.25 * log_watchers_z
+       + 0.15 * distribution_bonus
+       + 0.10 * consensus_strength
+     ```
+     where:
+     - `log_watchers_z` is the z-score of `log10(watchers)` so popular titles get a clear boost while ultra-small samples fall back toward the pack.
+     - `distribution_bonus` is derived from histogram shape labels (strong-left, left, balanced, bimodal, right) so skewed acclaim beats mixed receptions.
+     - `consensus_strength = high_rating_pct - low_rating_pct` keeps “steady excellence” ahead of polarizing titles with similar averages.
+   - Reorders films by the combined score (tie-breaking on raw watcher count) and assigns rank positions.
 
 3. **Persist canonical rows**  
    `services.rankings.persist_rankings` wipes existing rows for that `(cohort_id, strategy)` and inserts the new results into `film_rankings`, including the strategy parameters (`params` JSON) and `computed_at` timestamp. All other features and exports consume the ranks from this table.

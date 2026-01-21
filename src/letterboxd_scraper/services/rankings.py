@@ -13,6 +13,9 @@ from ..db import models
 _FAVORITE_RATE_WEIGHT = 0.6
 _LIKE_RATE_WEIGHT = 0.25
 _ENTHUSIASM_WATCHERS_BASELINE = 75.0
+_POPULARITY_WEIGHT = 0.25
+_DISTRIBUTION_WEIGHT = 0.15
+_CONSENSUS_WEIGHT = 0.10
 
 @dataclass
 class RankingResult:
@@ -50,6 +53,14 @@ def compute_bayesian(session: Session, cohort_id: int, m_value: int) -> List[Ran
             stats.avg_rating,
             COALESCE(stats.likes_count, 0) AS likes_count,
             COALESCE(stats.favorites_count, 0) AS favorites_count,
+            COALESCE(stats.high_rating_pct, 0) AS high_rating_pct,
+            COALESCE(stats.low_rating_pct, 0) AS low_rating_pct,
+            COALESCE(stats.count_rating_gte_4_5, 0) AS count_rating_gte_4_5,
+            COALESCE(stats.count_rating_4_0_4_5, 0) AS count_rating_4_0_4_5,
+            COALESCE(stats.count_rating_3_5_4_0, 0) AS count_rating_3_5_4_0,
+            COALESCE(stats.count_rating_3_0_3_5, 0) AS count_rating_3_0_3_5,
+            COALESCE(stats.count_rating_2_5_3_0, 0) AS count_rating_2_5_3_0,
+            COALESCE(stats.count_rating_lt_2_5, 0) AS count_rating_lt_2_5,
             (
                 (COALESCE(stats.watchers, 0)::float / (COALESCE(stats.watchers, 0) + :m_value))
                     * COALESCE(stats.avg_rating, cohort_avg.value)
@@ -58,35 +69,76 @@ def compute_bayesian(session: Session, cohort_id: int, m_value: int) -> List[Ran
         FROM cohort_film_stats stats
         CROSS JOIN cohort_avg
         WHERE stats.cohort_id = :cohort_id
-        ORDER BY base_score DESC
+          AND COALESCE(stats.watchers, 0) > 0
         """
     )
-    rows = session.execute(query, {"cohort_id": cohort_id, "m_value": m_value}).fetchall()
-    results: List[RankingResult] = []
-    for idx, row in enumerate(rows, start=1):
-        watchers = int(row.watchers or 0)
-        avg_rating = float(row.avg_rating) if row.avg_rating is not None else None
-        favorites = float(row.favorites_count or 0)
-        likes = float(row.likes_count or 0)
+    mappings = session.execute(query, {"cohort_id": cohort_id, "m_value": m_value}).mappings().all()
+    if not mappings:
+        return []
+    watcher_logs = [math.log10(max(1, int(row["watchers"] or 0))) for row in mappings]
+    watcher_zscores = _z_scores(watcher_logs)
+    consensus_strengths = [
+        _clamp(
+            float(row["high_rating_pct"] or 0) - float(row["low_rating_pct"] or 0),
+            -1.0,
+            1.0,
+        )
+        for row in mappings
+    ]
+    distributions: List[Tuple[str, float]] = [
+        classify_distribution_label(
+            watchers=int(row["watchers"] or 0),
+            count_gte_4_5=int(row["count_rating_gte_4_5"] or 0),
+            count_4_0_4_5=int(row["count_rating_4_0_4_5"] or 0),
+            count_3_5_4_0=int(row["count_rating_3_5_4_0"] or 0),
+            count_3_0_3_5=int(row["count_rating_3_0_3_5"] or 0),
+            count_2_5_3_0=int(row["count_rating_2_5_3_0"] or 0),
+            count_lt_2_5=int(row["count_rating_lt_2_5"] or 0),
+        )
+        for row in mappings
+    ]
+    scored_rows: List[Tuple[int, float, Dict[str, Any]]] = []
+    for idx, row in enumerate(mappings):
+        watchers = int(row["watchers"] or 0)
+        avg_rating = float(row["avg_rating"]) if row["avg_rating"] is not None else None
+        favorites = float(row["favorites_count"] or 0)
+        likes = float(row["likes_count"] or 0)
         favorite_rate = favorites / watchers if watchers > 0 else 0.0
         like_rate = likes / watchers if watchers > 0 else 0.0
         enthusiasm_scale = min(1.0, watchers / _ENTHUSIASM_WATCHERS_BASELINE)
         enthusiasm_bonus = enthusiasm_scale * (
             _FAVORITE_RATE_WEIGHT * favorite_rate + _LIKE_RATE_WEIGHT * like_rate
         )
-        score = float(row.base_score or 0.0) + enthusiasm_bonus
+        distribution_label, distribution_bonus = distributions[idx]
+        popularity_bonus = _POPULARITY_WEIGHT * watcher_zscores[idx]
+        consensus_bonus = _CONSENSUS_WEIGHT * consensus_strengths[idx]
+        distribution_weighted = _DISTRIBUTION_WEIGHT * distribution_bonus
+        score = (
+            float(row["base_score"] or 0.0)
+            + enthusiasm_bonus
+            + popularity_bonus
+            + consensus_bonus
+            + distribution_weighted
+        )
+        metadata: Dict[str, Any] = {
+            "watchers": watchers,
+            "avg_rating": avg_rating,
+            "favorite_rate": favorite_rate,
+            "like_rate": like_rate,
+            "enthusiasm_bonus": enthusiasm_bonus,
+            "distribution_label": distribution_label,
+            "consensus_strength": consensus_strengths[idx],
+        }
+        scored_rows.append((int(row["film_id"]), score, metadata))
+    ordered = sorted(scored_rows, key=lambda entry: (-entry[1], -entry[2].get("watchers", 0)))
+    results: List[RankingResult] = []
+    for rank_idx, (film_id, score, metadata) in enumerate(ordered, start=1):
         results.append(
             RankingResult(
-                film_id=row.film_id,
+                film_id=film_id,
                 score=score,
-                rank=idx,
-                metadata={
-                    "watchers": watchers,
-                    "avg_rating": avg_rating,
-                    "favorite_rate": favorite_rate,
-                    "like_rate": like_rate,
-                    "enthusiasm_bonus": enthusiasm_bonus,
-                },
+                rank=rank_idx,
+                metadata=metadata,
             )
         )
     return results
