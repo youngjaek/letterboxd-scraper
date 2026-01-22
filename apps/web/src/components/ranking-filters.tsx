@@ -71,6 +71,7 @@ function MultiSelectFilter({
   const [query, setQuery] = useState("");
   const [suggestions, setSuggestions] = useState<Option[]>([]);
   const [showSuggestions, setShowSuggestions] = useState(false);
+  const [highlightedIndex, setHighlightedIndex] = useState(-1);
   const selectedValues = useMemo(() => searchParams?.getAll(paramKey) ?? [], [searchParams, paramKey]);
   const selectedOptions = useSelectedOptions(selectedValues, endpoint, idParam, mapResponse);
 
@@ -91,6 +92,7 @@ function MultiSelectFilter({
           const filtered = mapped.filter((option) => !selectedValues.includes(option.value));
           setSuggestions(filtered);
           setShowSuggestions(true);
+          setHighlightedIndex(filtered.length > 0 ? 0 : -1);
         }
       })
       .catch(() => {
@@ -100,6 +102,12 @@ function MultiSelectFilter({
       });
     return () => controller.abort();
   }, [query, endpoint, mapResponse, selectedValues]);
+
+  useEffect(() => {
+    if (!showSuggestions) {
+      setHighlightedIndex(-1);
+    }
+  }, [showSuggestions]);
 
   function updateParams(mutator: (params: URLSearchParams) => void) {
     const params = new URLSearchParams(searchParams?.toString() ?? "");
@@ -116,6 +124,7 @@ function MultiSelectFilter({
     setQuery("");
     setSuggestions([]);
     setShowSuggestions(false);
+    setHighlightedIndex(-1);
   }
 
   function removeValue(value: string) {
@@ -136,6 +145,48 @@ function MultiSelectFilter({
           type="text"
           value={query}
           onChange={(event) => setQuery(event.target.value)}
+          onKeyDown={(event) => {
+            if (event.key === "ArrowDown") {
+              event.preventDefault();
+              if (!suggestions.length) {
+                return;
+              }
+              setShowSuggestions(true);
+              setHighlightedIndex((prev) => {
+                const next = prev + 1;
+                if (next >= suggestions.length) {
+                  return 0;
+                }
+                return next;
+              });
+              return;
+            }
+            if (event.key === "ArrowUp") {
+              event.preventDefault();
+              if (!suggestions.length) {
+                return;
+              }
+              setShowSuggestions(true);
+              setHighlightedIndex((prev) => {
+                if (prev <= 0) {
+                  return suggestions.length - 1;
+                }
+                return prev - 1;
+              });
+              return;
+            }
+            if (event.key === "Enter") {
+              if (highlightedIndex >= 0 && highlightedIndex < suggestions.length) {
+                event.preventDefault();
+                addOption(suggestions[highlightedIndex]);
+              }
+              return;
+            }
+            if (event.key === "Escape") {
+              setShowSuggestions(false);
+              setHighlightedIndex(-1);
+            }
+          }}
           onFocus={() => setShowSuggestions(true)}
           onBlur={() => {
             setTimeout(() => setShowSuggestions(false), 150);
@@ -145,11 +196,12 @@ function MultiSelectFilter({
         />
         {showSuggestions && suggestions.length > 0 && (
           <ul className="absolute z-10 mt-1 max-h-48 w-full overflow-auto rounded border border-white/10 bg-slate-900/90 text-sm text-white shadow">
-            {suggestions.map((option) => (
+            {suggestions.map((option, index) => (
               <li
                 key={option.value}
-                className="cursor-pointer px-3 py-2 hover:bg-white/10"
+                className={`cursor-pointer px-3 py-2 ${highlightedIndex === index ? "bg-white/20 text-white" : "hover:bg-white/10"}`}
                 onMouseDown={(event) => event.preventDefault()}
+                onMouseEnter={() => setHighlightedIndex(index)}
                 onClick={() => addOption(option)}
               >
                 <span className="font-semibold">{option.label}</span>
