@@ -267,8 +267,8 @@ def list_rankings(
     release_year_min: int | None = None,
     release_year_max: int | None = None,
     decade: int | None = None,
-    watchers_min: int | None = None,
-    watchers_max: int | None = None,
+    watchers_min: int | None = Query(2, ge=0),
+    watchers_max: int | None = Query(None, ge=0),
     session: Session = Depends(get_db_session),
 ) -> RankingListResponse:
     limit = max(1, min(limit, 100))

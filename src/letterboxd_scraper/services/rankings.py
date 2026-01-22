@@ -69,7 +69,7 @@ def compute_bayesian(session: Session, cohort_id: int, m_value: int) -> List[Ran
         FROM cohort_film_stats stats
         CROSS JOIN cohort_avg
         WHERE stats.cohort_id = :cohort_id
-          AND COALESCE(stats.watchers, 0) > 0
+          AND COALESCE(stats.watchers, 0) > 1
         """
     )
     mappings = session.execute(query, {"cohort_id": cohort_id, "m_value": m_value}).mappings().all()

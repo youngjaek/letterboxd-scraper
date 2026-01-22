@@ -25,7 +25,7 @@ With the scrape/enrichment pipeline in place we now have normalized tables that 
 
 ### Scoring beyond averages
 
-The default UI/API surface now leans on a Bayesian foundation but layers in popularity and consensus bonuses so attention-heavy titles outrank equally rated deep cuts. For each film we start with the traditional Bayesian weighted average, add the enthusiasm term `scale(watchers) * (0.6 * favorite_rate + 0.25 * like_rate)`, then tack on:
+The default UI/API surface now leans on a Bayesian foundation but layers in popularity and consensus bonuses so attention-heavy titles outrank equally rated deep cuts. Films with fewer than **two** cohort watchers are omitted to keep noise down. For each film we start with the traditional Bayesian weighted average, add the enthusiasm term `scale(watchers) * (0.6 * favorite_rate + 0.25 * like_rate)`, then tack on:
 
 - `0.25 * log_watchers_z`: the z-score of `log10(watchers)` so genuinely popular films climb ahead of similarly rated obscurities.
 - `0.15 * distribution_bonus`: histogram-derived skew labels (strong-left, left, balanced, bimodal, right) translated into ±0.15 bumps.

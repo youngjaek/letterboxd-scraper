@@ -217,11 +217,11 @@ export default async function CohortRankingsPage({
           <RankingStrategySelect cohortId={cohort.id} currentStrategy={strategy} />
         </div>
         <RankingFilters />
+        <PaginationControls placement="top" page={currentPage} totalPages={totalPages} totalItems={total} />
         {rankings.length === 0 ? (
           <p className="p-6 text-sm text-slate-400">No rankings found for the current filters.</p>
         ) : (
-          <>
-            <ol>
+          <ol>
               {rankings.map((item) => {
                 const directorNames = item.directors?.map((director) => director.name).filter(Boolean) ?? [];
                 const primaryDirectors = directorNames.slice(0, 2);
@@ -326,10 +326,9 @@ export default async function CohortRankingsPage({
                   </li>
                 );
               })}
-            </ol>
-            <PaginationControls page={currentPage} totalPages={totalPages} />
-          </>
+          </ol>
         )}
+        <PaginationControls page={currentPage} totalPages={totalPages} totalItems={total} />
       </div>
     </section>
   );

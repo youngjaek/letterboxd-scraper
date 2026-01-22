@@ -19,7 +19,7 @@ This document explains how ranking results and the new percentile-based “smart
 
 2. **Compute strategy scores**  
    `letterboxd-scraper rank compute <cohort_id> --strategy bayesian` runs `services.rankings.compute_bayesian`, which:
-   - Pulls per-film aggregates from `cohort_film_stats` (watchers, average rating, like/favourite counts, high/low rating share, histogram buckets).
+   - Pulls per-film aggregates from `cohort_film_stats` (watchers, average rating, like/favourite counts, high/low rating share, histogram buckets). Films need at least **two** cohort watchers to enter the canonical rankings so single-watcher blips never bloat the list.
    - Starts with the Bayesian weighted average using the configured `m_value`, then layers in popularity and consensus signals:  
      ```
      score =
