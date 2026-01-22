@@ -267,6 +267,8 @@ def list_rankings(
     release_year_min: int | None = None,
     release_year_max: int | None = None,
     decade: int | None = None,
+    watchers_min: int | None = None,
+    watchers_max: int | None = None,
     session: Session = Depends(get_db_session),
 ) -> RankingListResponse:
     limit = max(1, min(limit, 100))
@@ -323,6 +325,20 @@ def list_rankings(
         params["decade_start"] = decade_start
         params["decade_end"] = decade_end
         filter_clauses.append("f.release_year BETWEEN :decade_start AND :decade_end")
+    if watchers_min is not None:
+        if watchers_min < 0:
+            raise HTTPException(status_code=400, detail="watchers_min cannot be negative.")
+        params["watchers_min"] = watchers_min
+        filter_clauses.append("COALESCE(stats.watchers, 0) >= :watchers_min")
+    if watchers_max is not None:
+        if watchers_max < 0:
+            raise HTTPException(status_code=400, detail="watchers_max cannot be negative.")
+        if watchers_min is not None and watchers_min > watchers_max:
+            raise HTTPException(
+                status_code=400, detail="watchers_min cannot be greater than watchers_max."
+            )
+        params["watchers_max"] = watchers_max
+        filter_clauses.append("COALESCE(stats.watchers, 0) <= :watchers_max")
     filters_sql = ""
     if filter_clauses:
         filters_sql = " AND " + " AND ".join(filter_clauses)

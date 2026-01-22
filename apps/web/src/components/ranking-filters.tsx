@@ -214,6 +214,56 @@ function parseReleaseYearRange(value: string) {
   return { min, max };
 }
 
+function normalizeWatchersToken(token: string) {
+  const cleaned = token.replace(/,/g, "").trim();
+  if (!cleaned) {
+    return "";
+  }
+  return /^\d+$/.test(cleaned) ? cleaned : "";
+}
+
+function parseWatchersRange(value: string) {
+  const trimmed = value.trim();
+  if (!trimmed) {
+    return { min: "", max: "" };
+  }
+  if (!trimmed.includes("..")) {
+    const normalized = normalizeWatchersToken(trimmed);
+    return normalized ? { min: normalized, max: normalized } : { min: "", max: "" };
+  }
+  const [startRaw = "", endRaw = ""] = trimmed.split("..");
+  return {
+    min: normalizeWatchersToken(startRaw),
+    max: normalizeWatchersToken(endRaw),
+  };
+}
+
+function formatWatchersValue(value: string) {
+  if (!value) {
+    return "";
+  }
+  const num = Number(value);
+  if (Number.isNaN(num)) {
+    return value;
+  }
+  return num.toLocaleString();
+}
+
+function formatWatchersRange(min: string, max: string) {
+  const formattedMin = formatWatchersValue(min);
+  const formattedMax = formatWatchersValue(max);
+  if (formattedMin && formattedMax) {
+    return formattedMin === formattedMax ? formattedMin : `${formattedMin}..${formattedMax}`;
+  }
+  if (formattedMin) {
+    return `${formattedMin}..`;
+  }
+  if (formattedMax) {
+    return `..${formattedMax}`;
+  }
+  return "";
+}
+
 function ReleaseYearFilters() {
   const searchParams = useSearchParams();
   const router = useRouter();
@@ -410,6 +460,78 @@ function DistributionFilter() {
   );
 }
 
+function WatchersFilters() {
+  const searchParams = useSearchParams();
+  const router = useRouter();
+  const pathname = usePathname();
+  const minRaw = searchParams?.get("watchers_min") ?? "";
+  const maxRaw = searchParams?.get("watchers_max") ?? "";
+  const computedRangeValue = useMemo(
+    () => formatWatchersRange(minRaw, maxRaw),
+    [minRaw, maxRaw],
+  );
+  const [rangeValue, setRangeValue] = useState(computedRangeValue);
+
+  useEffect(() => setRangeValue(computedRangeValue), [computedRangeValue]);
+
+  function commitRange(value: string) {
+    const params = new URLSearchParams(searchParams?.toString() ?? "");
+    const parsed = parseWatchersRange(value);
+    let minValue = parsed.min;
+    let maxValue = parsed.max;
+    if (minValue && maxValue) {
+      const minNum = parseInt(minValue, 10);
+      const maxNum = parseInt(maxValue, 10);
+      if (!Number.isNaN(minNum) && !Number.isNaN(maxNum) && minNum > maxNum) {
+        minValue = String(maxNum);
+        maxValue = String(minNum);
+      }
+    }
+    if (minValue) {
+      params.set("watchers_min", minValue);
+    } else {
+      params.delete("watchers_min");
+    }
+    if (maxValue) {
+      params.set("watchers_max", maxValue);
+    } else {
+      params.delete("watchers_max");
+    }
+    params.delete("page");
+    const formatted = formatWatchersRange(minValue, maxValue);
+    setRangeValue(formatted);
+    const query = params.toString();
+    router.push(query ? `${pathname}?${query}` : pathname, { scroll: false });
+  }
+
+  return (
+    <div className="flex flex-col gap-2">
+      <span className="text-[0.6rem] font-semibold uppercase tracking-[0.2em] text-slate-400">
+        Watchers
+      </span>
+      <div className="flex flex-wrap gap-3 text-xs text-slate-400">
+        <label className="flex flex-col gap-1">
+          <span>Count / Range</span>
+          <input
+            type="text"
+            value={rangeValue}
+            placeholder="50 or 50..500"
+            onChange={(event) => setRangeValue(event.target.value)}
+            onBlur={() => commitRange(rangeValue)}
+            onKeyDown={(event) => {
+              if (event.key === "Enter") {
+                event.preventDefault();
+                commitRange(rangeValue);
+              }
+            }}
+            className="w-48 rounded border border-white/10 bg-black/40 px-3 py-2 text-sm text-white focus:border-brand-primary focus:outline-none"
+          />
+        </label>
+      </div>
+    </div>
+  );
+}
+
 export function RankingFilters() {
   const searchParams = useSearchParams();
   const router = useRouter();
@@ -422,6 +544,8 @@ export function RankingFilters() {
     "release_year_min",
     "release_year_max",
     "decade",
+    "watchers_min",
+    "watchers_max",
   ];
   const hasFilters = filterKeys.some((key) => (searchParams?.getAll(key) ?? []).length > 0);
   const mapGenre = useCallback((item: any) => ({ value: String(item.id), label: item.name }), []);
@@ -469,6 +593,7 @@ export function RankingFilters() {
           />
         </div>
         <ReleaseYearFilters />
+        <WatchersFilters />
         <DistributionFilter />
         <div className="flex justify-end">
           <button

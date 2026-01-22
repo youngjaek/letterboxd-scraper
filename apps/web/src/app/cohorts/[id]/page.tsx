@@ -99,7 +99,14 @@ async function fetchRankings(
       }
     });
   });
-  const singleKeys = ["distribution", "release_year_min", "release_year_max", "decade"];
+  const singleKeys = [
+    "distribution",
+    "release_year_min",
+    "release_year_max",
+    "decade",
+    "watchers_min",
+    "watchers_max",
+  ];
   singleKeys.forEach((key) => {
     const raw = Array.isArray(searchParams?.[key]) ? searchParams?.[key]?.[0] : searchParams?.[key];
     if (raw) {
