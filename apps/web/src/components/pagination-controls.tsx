@@ -1,6 +1,6 @@
 "use client";
 
-import { FormEvent, useEffect, useMemo, useState } from "react";
+import { FormEvent, useEffect, useState } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import {
   DEFAULT_PAGE_SIZE,
@@ -17,44 +17,6 @@ type PaginationControlsProps = {
   pageSize: number;
   resultLimit: number;
 };
-
-type PageToken = number | "ellipsis";
-
-function buildPageTokens(page: number, totalPages: number, siblingCount = 1): PageToken[] {
-  if (totalPages <= 1) {
-    return [1];
-  }
-  const totalNumbers = siblingCount * 2 + 5;
-  if (totalNumbers >= totalPages) {
-    return Array.from({ length: totalPages }, (_, idx) => idx + 1);
-  }
-  const leftSibling = Math.max(page - siblingCount, 1);
-  const rightSibling = Math.min(page + siblingCount, totalPages);
-  const showLeftEllipsis = leftSibling > 2;
-  const showRightEllipsis = rightSibling < totalPages - 1;
-
-  const items: PageToken[] = [1];
-
-  if (showLeftEllipsis) {
-    items.push("ellipsis");
-  }
-
-  const start = showLeftEllipsis ? leftSibling : 2;
-  const end = showRightEllipsis ? rightSibling : totalPages - 1;
-  for (let current = start; current <= end; current += 1) {
-    items.push(current);
-  }
-
-  if (showRightEllipsis) {
-    items.push("ellipsis");
-  }
-
-  if (totalPages > 1) {
-    items.push(totalPages);
-  }
-
-  return items;
-}
 
 function PaginationButton({
   text,
@@ -99,7 +61,20 @@ export function PaginationControls({
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const [jumpValue, setJumpValue] = useState(String(page));
-  const pageTokens = useMemo(() => buildPageTokens(page, totalPages), [page, totalPages]);
+  const [toastMessage, setToastMessage] = useState<string | null>(null);
+  const [toastVisible, setToastVisible] = useState(false);
+  useEffect(() => {
+    if (!toastMessage) {
+      setToastVisible(false);
+      return undefined;
+    }
+    setToastVisible(true);
+    const timeout = setTimeout(() => {
+      setToastVisible(false);
+      setTimeout(() => setToastMessage(null), 300);
+    }, 2500);
+    return () => clearTimeout(timeout);
+  }, [toastMessage]);
 
   useEffect(() => {
     setJumpValue(String(page));
@@ -163,6 +138,11 @@ export function PaginationControls({
     const parsed = parseInt(jumpValue, 10);
     if (Number.isNaN(parsed)) {
       setJumpValue(String(page));
+      setToastMessage("Enter a valid page number.");
+      return;
+    }
+    if (parsed < 1 || parsed > totalPages) {
+      setToastMessage(`Page must be between 1 and ${totalPages}.`);
       return;
     }
     navigate(parsed);
@@ -209,44 +189,20 @@ export function PaginationControls({
           </label>
         </div>
       </div>
-      <div className="flex flex-wrap items-center gap-2">
-        <PaginationButton text="First" ariaLabel="First page" disabled={page <= 1} onClick={() => navigate(1)} />
+      <div className="flex flex-wrap items-center gap-3">
         <PaginationButton
           text="Prev"
           ariaLabel="Previous page"
           disabled={page <= 1}
           onClick={() => navigate(page - 1)}
         />
-        <div className="flex flex-wrap items-center gap-1">
-          {pageTokens.map((token, index) =>
-            token === "ellipsis" ? (
-              <span key={`ellipsis-${index}`} className="px-2 text-lg text-slate-500">
-                …
-              </span>
-            ) : (
-              <PaginationButton
-                key={token}
-                text={String(token)}
-                ariaLabel={`Page ${token}`}
-                active={token === page}
-                onClick={() => navigate(token)}
-              />
-            ),
-          )}
-        </div>
         <PaginationButton
           text="Next"
           ariaLabel="Next page"
           disabled={page >= totalPages}
           onClick={() => navigate(page + 1)}
         />
-        <PaginationButton
-          text="Last"
-          ariaLabel="Last page"
-          disabled={page >= totalPages}
-          onClick={() => navigate(totalPages)}
-        />
-        <form onSubmit={submitJump} className="ml-2 flex items-center gap-2">
+        <form onSubmit={submitJump} className="flex items-center gap-2">
           <label className="text-[0.55rem] uppercase tracking-[0.2em] text-slate-500">
             Go to
             <input
@@ -271,6 +227,17 @@ export function PaginationControls({
           </label>
         </form>
       </div>
+      {toastMessage && (
+        <div className="pointer-events-none fixed bottom-6 right-6">
+          <span
+            className={`rounded border border-black/10 bg-white px-4 py-2 text-xs text-black shadow-lg transition-opacity duration-300 ${
+              toastVisible ? "opacity-100" : "opacity-0"
+            }`}
+          >
+            {toastMessage}
+          </span>
+        </div>
+      )}
     </div>
   );
 }
