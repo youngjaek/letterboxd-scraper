@@ -38,6 +38,8 @@ DISTRIBUTION_LABELS = [
     "mixed",
 ]
 
+RESULT_LIMIT_OPTIONS = [100, 250, 500, 1000]
+
 DISTRIBUTION_LABEL_SQL = """
 CASE
     WHEN COALESCE(stats.watchers, 0) <= 0 THEN 'unknown'
@@ -258,8 +260,9 @@ def create_cohort(
 def list_rankings(
     cohort_id: int,
     strategy: str = "bayesian",
-    limit: int = 25,
+    limit: int = 50,
     page: int = 1,
+    result_limit: int = Query(250),
     genres: List[int] | None = Query(None),
     countries: List[str] | None = Query(None),
     directors: List[int] | None = Query(None),
@@ -274,13 +277,20 @@ def list_rankings(
     limit = max(1, min(limit, 100))
     page = max(1, page)
     offset = (page - 1) * limit
+    if result_limit not in RESULT_LIMIT_OPTIONS:
+        raise HTTPException(
+            status_code=400,
+            detail=f"result_limit must be one of {', '.join(str(value) for value in RESULT_LIMIT_OPTIONS)}",
+        )
     params: dict[str, object] = {
         "cohort_id": cohort_id,
         "strategy": strategy,
         "limit": limit,
         "offset": offset,
+        "result_limit": result_limit,
     }
     filter_clauses: list[str] = []
+    filter_clauses.append("fr.rank <= :result_limit")
     if genres:
         genre_ids = list({int(value) for value in genres if value is not None})
         if genre_ids:

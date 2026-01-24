@@ -5,6 +5,7 @@ import { RatingHistogram } from "@/components/rating-histogram";
 import { RankingFilters } from "@/components/ranking-filters";
 import { PaginationControls } from "@/components/pagination-controls";
 import { serverApiBase } from "@/lib/api-base";
+import { parsePageSize, parseResultLimit } from "@/lib/ranking-options";
 
 const apiBase = serverApiBase;
 const defaultStrategy = "bayesian";
@@ -70,8 +71,6 @@ async function fetchCohort(id: string): Promise<CohortDetail | null> {
   return res.json();
 }
 
-const pageSize = 25;
-
 function getParamValues(value: string | string[] | undefined): string[] {
   if (!value) {
     return [];
@@ -82,7 +81,9 @@ function getParamValues(value: string | string[] | undefined): string[] {
 async function fetchRankings(
   id: string,
   strategy: string,
-  searchParams?: Record<string, string | string[] | undefined>,
+  searchParams: Record<string, string | string[] | undefined> | undefined,
+  pageSize: number,
+  resultLimit: number,
 ) {
   const pageParam = searchParams?.page;
   const currentPageRaw = Array.isArray(pageParam) ? pageParam[0] : pageParam;
@@ -91,6 +92,7 @@ async function fetchRankings(
   query.set("strategy", strategy);
   query.set("limit", pageSize.toString());
   query.set("page", currentPageNum.toString());
+  query.set("result_limit", resultLimit.toString());
   const multiKeys = ["genres", "countries", "directors"];
   multiKeys.forEach((key) => {
     getParamValues(searchParams?.[key]).forEach((value) => {
@@ -168,6 +170,8 @@ export default async function CohortRankingsPage({
   const searchStrategy = searchParams?.strategy;
   const strategy =
     typeof searchStrategy === "string" && searchStrategy.length > 0 ? searchStrategy : defaultStrategy;
+  const selectedPageSize = parsePageSize(searchParams?.limit);
+  const selectedResultLimit = parseResultLimit(searchParams?.result_limit);
   const cohort = await fetchCohort(routeParams.id);
   if (!cohort) {
     return (
@@ -180,13 +184,13 @@ export default async function CohortRankingsPage({
     );
   }
   const [rankingResponse, scrapeStatus] = await Promise.all([
-    fetchRankings(routeParams.id, strategy, searchParams),
+    fetchRankings(routeParams.id, strategy, searchParams, selectedPageSize, selectedResultLimit),
     fetchScrapeStatus(routeParams.id),
   ]);
   const rankings: RankingRow[] = rankingResponse.items ?? [];
   const total = rankingResponse.total ?? 0;
   const currentPage = rankingResponse.page ?? 1;
-  const totalPages = Math.max(1, Math.ceil(total / pageSize));
+  const totalPages = Math.max(1, Math.ceil(total / selectedPageSize));
   return (
     <section className="mx-auto flex max-w-4xl flex-col gap-6">
       <div className="rounded-xl border border-white/10 bg-white/5 p-6 space-y-3">
@@ -217,7 +221,14 @@ export default async function CohortRankingsPage({
           <RankingStrategySelect cohortId={cohort.id} currentStrategy={strategy} />
         </div>
         <RankingFilters />
-        <PaginationControls placement="top" page={currentPage} totalPages={totalPages} totalItems={total} />
+        <PaginationControls
+          placement="top"
+          page={currentPage}
+          totalPages={totalPages}
+          totalItems={total}
+          pageSize={selectedPageSize}
+          resultLimit={selectedResultLimit}
+        />
         {rankings.length === 0 ? (
           <p className="p-6 text-sm text-slate-400">No rankings found for the current filters.</p>
         ) : (
@@ -328,7 +339,13 @@ export default async function CohortRankingsPage({
               })}
           </ol>
         )}
-        <PaginationControls page={currentPage} totalPages={totalPages} totalItems={total} />
+        <PaginationControls
+          page={currentPage}
+          totalPages={totalPages}
+          totalItems={total}
+          pageSize={selectedPageSize}
+          resultLimit={selectedResultLimit}
+        />
       </div>
     </section>
   );

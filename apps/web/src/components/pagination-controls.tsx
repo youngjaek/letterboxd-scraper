@@ -2,12 +2,20 @@
 
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
+import {
+  DEFAULT_PAGE_SIZE,
+  DEFAULT_RESULT_LIMIT,
+  PAGE_SIZE_OPTIONS,
+  RESULT_LIMIT_OPTIONS,
+} from "@/lib/ranking-options";
 
 type PaginationControlsProps = {
   page: number;
   totalPages: number;
   totalItems: number;
   placement?: "top" | "bottom";
+  pageSize: number;
+  resultLimit: number;
 };
 
 type PageToken = number | "ellipsis";
@@ -84,6 +92,8 @@ export function PaginationControls({
   totalPages,
   totalItems,
   placement = "bottom",
+  pageSize,
+  resultLimit,
 }: PaginationControlsProps) {
   const router = useRouter();
   const pathname = usePathname();
@@ -128,6 +138,26 @@ export function PaginationControls({
     setJumpValue(numeric);
   }
 
+  function updateParam(paramName: string, nextValue: number, defaultValue: number) {
+    const params = new URLSearchParams(searchParams?.toString() ?? "");
+    if (nextValue === defaultValue) {
+      params.delete(paramName);
+    } else {
+      params.set(paramName, String(nextValue));
+    }
+    params.delete("page");
+    const query = params.toString();
+    router.push(query ? `${pathname}?${query}` : pathname, { scroll: false });
+  }
+
+  function handleResultLimitChange(nextValue: number) {
+    updateParam("result_limit", nextValue, DEFAULT_RESULT_LIMIT);
+  }
+
+  function handlePageSizeChange(nextValue: number) {
+    updateParam("limit", nextValue, DEFAULT_PAGE_SIZE);
+  }
+
   function submitJump(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const parsed = parseInt(jumpValue, 10);
@@ -146,7 +176,39 @@ export function PaginationControls({
 
   return (
     <div className={containerClasses}>
-      <span className="text-[0.65rem] uppercase tracking-[0.2em] text-slate-400">{summary}</span>
+      <div className="flex flex-wrap items-center gap-3">
+        <span className="text-[0.65rem] uppercase tracking-[0.2em] text-slate-400">{summary}</span>
+        <div className="flex flex-wrap items-center gap-3 text-[0.65rem] uppercase tracking-[0.2em] text-slate-400">
+          <label className="flex items-center gap-2">
+            Top
+            <select
+              className="rounded border border-white/15 bg-black/30 px-2 py-1 text-[0.75rem] text-white focus:border-brand-primary focus:outline-none"
+              value={resultLimit}
+              onChange={(event) => handleResultLimitChange(Number(event.target.value))}
+            >
+              {RESULT_LIMIT_OPTIONS.map((option) => (
+                <option key={option} value={option}>
+                  {option}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="flex items-center gap-2">
+            Per page
+            <select
+              className="rounded border border-white/15 bg-black/30 px-2 py-1 text-[0.75rem] text-white focus:border-brand-primary focus:outline-none"
+              value={pageSize}
+              onChange={(event) => handlePageSizeChange(Number(event.target.value))}
+            >
+              {PAGE_SIZE_OPTIONS.map((option) => (
+                <option key={option} value={option}>
+                  {option}
+                </option>
+              ))}
+            </select>
+          </label>
+        </div>
+      </div>
       <div className="flex flex-wrap items-center gap-2">
         <PaginationButton text="First" ariaLabel="First page" disabled={page <= 1} onClick={() => navigate(1)} />
         <PaginationButton
