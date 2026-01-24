@@ -290,7 +290,6 @@ def list_rankings(
         "result_limit": result_limit,
     }
     filter_clauses: list[str] = []
-    filter_clauses.append("fr.rank <= :result_limit")
     if genres:
         genre_ids = list({int(value) for value in genres if value is not None})
         if genre_ids:
@@ -354,99 +353,111 @@ def list_rankings(
         filters_sql = " AND " + " AND ".join(filter_clauses)
     total_stmt = text(
         f"""
+        WITH ranked AS (
+            SELECT
+                ROW_NUMBER() OVER (ORDER BY fr.rank ASC) AS filtered_rank
+            FROM film_rankings fr
+            JOIN films f ON f.id = fr.film_id
+            LEFT JOIN cohort_film_stats stats
+                ON stats.cohort_id = fr.cohort_id AND stats.film_id = fr.film_id
+            WHERE fr.cohort_id = :cohort_id
+              AND fr.strategy = :strategy
+            {filters_sql}
+        )
         SELECT COUNT(*)
-        FROM film_rankings fr
-        JOIN films f ON f.id = fr.film_id
-        LEFT JOIN cohort_film_stats stats
-            ON stats.cohort_id = fr.cohort_id AND stats.film_id = fr.film_id
-        WHERE fr.cohort_id = :cohort_id
-          AND fr.strategy = :strategy
-        {filters_sql}
+        FROM ranked
+        WHERE filtered_rank <= :result_limit
         """
     )
     total = session.execute(total_stmt, params).scalar_one()
     data_stmt = text(
         f"""
-        SELECT
-            fr.film_id,
-            fr.rank,
-            fr.score,
-            f.title,
-            f.slug,
-            f.poster_url,
-            f.release_year,
-            stats.watchers,
-            stats.avg_rating,
-            stats.likes_count,
-            stats.favorites_count,
-            stats.high_rating_pct,
-            stats.low_rating_pct,
-            stats.count_rating_gte_4_5,
-            stats.count_rating_4_0_4_5,
-            stats.count_rating_3_5_4_0,
-            stats.count_rating_3_0_3_5,
-            stats.count_rating_2_5_3_0,
-            stats.count_rating_lt_2_5,
-            hist.count_0_5,
-            hist.count_1_0,
-            hist.count_1_5,
-            hist.count_2_0,
-            hist.count_2_5,
-            hist.count_3_0,
-            hist.count_3_5,
-            hist.count_4_0,
-            hist.count_4_5,
-            hist.count_5_0,
-            {DISTRIBUTION_LABEL_SQL} AS distribution_label,
-            COALESCE(genre_data.genres, ARRAY[]::text[]) AS genres,
-            COALESCE(director_data.names, ARRAY[]::text[]) AS director_names,
-            COALESCE(director_data.ids, ARRAY[]::int[]) AS director_ids
-        FROM film_rankings fr
-        JOIN films f ON f.id = fr.film_id
-        LEFT JOIN cohort_film_stats stats
-            ON stats.cohort_id = fr.cohort_id AND stats.film_id = fr.film_id
-        LEFT JOIN LATERAL (
+        WITH ranked AS (
             SELECT
-                SUM(CASE WHEN r.rating = 0.5 THEN 1 ELSE 0 END) AS count_0_5,
-                SUM(CASE WHEN r.rating = 1.0 THEN 1 ELSE 0 END) AS count_1_0,
-                SUM(CASE WHEN r.rating = 1.5 THEN 1 ELSE 0 END) AS count_1_5,
-                SUM(CASE WHEN r.rating = 2.0 THEN 1 ELSE 0 END) AS count_2_0,
-                SUM(CASE WHEN r.rating = 2.5 THEN 1 ELSE 0 END) AS count_2_5,
-                SUM(CASE WHEN r.rating = 3.0 THEN 1 ELSE 0 END) AS count_3_0,
-                SUM(CASE WHEN r.rating = 3.5 THEN 1 ELSE 0 END) AS count_3_5,
-                SUM(CASE WHEN r.rating = 4.0 THEN 1 ELSE 0 END) AS count_4_0,
-                SUM(CASE WHEN r.rating = 4.5 THEN 1 ELSE 0 END) AS count_4_5,
-                SUM(CASE WHEN r.rating = 5.0 THEN 1 ELSE 0 END) AS count_5_0
-            FROM ratings r
-            JOIN cohort_members cm ON cm.user_id = r.user_id
-            WHERE cm.cohort_id = :cohort_id
-              AND r.film_id = fr.film_id
-              AND r.rating IS NOT NULL
-        ) AS hist ON TRUE
-        LEFT JOIN LATERAL (
-            SELECT array_remove(array_agg(g.name ORDER BY g.name), NULL) AS genres
-            FROM film_genres fg
-            JOIN genres g ON g.id = fg.genre_id
-            WHERE fg.film_id = fr.film_id
-        ) AS genre_data ON TRUE
-        LEFT JOIN LATERAL (
-            SELECT
-                array_remove(
-                    array_agg(p.name ORDER BY COALESCE(fp.credit_order, 1000), p.name),
-                    NULL
-                ) AS names,
-                array_remove(
-                    array_agg(p.id ORDER BY COALESCE(fp.credit_order, 1000), p.name),
-                    NULL
-                ) AS ids
-            FROM film_people fp
-            JOIN people p ON p.id = fp.person_id
-            WHERE fp.film_id = fr.film_id AND fp.role = 'director'
-        ) AS director_data ON TRUE
-        WHERE fr.cohort_id = :cohort_id
-          AND fr.strategy = :strategy
-        {filters_sql}
-        ORDER BY fr.rank ASC
+                fr.film_id,
+                fr.rank,
+                fr.score,
+                f.title,
+                f.slug,
+                f.poster_url,
+                f.release_year,
+                stats.watchers,
+                stats.avg_rating,
+                stats.likes_count,
+                stats.favorites_count,
+                stats.high_rating_pct,
+                stats.low_rating_pct,
+                stats.count_rating_gte_4_5,
+                stats.count_rating_4_0_4_5,
+                stats.count_rating_3_5_4_0,
+                stats.count_rating_3_0_3_5,
+                stats.count_rating_2_5_3_0,
+                stats.count_rating_lt_2_5,
+                hist.count_0_5,
+                hist.count_1_0,
+                hist.count_1_5,
+                hist.count_2_0,
+                hist.count_2_5,
+                hist.count_3_0,
+                hist.count_3_5,
+                hist.count_4_0,
+                hist.count_4_5,
+                hist.count_5_0,
+                {DISTRIBUTION_LABEL_SQL} AS distribution_label,
+                COALESCE(genre_data.genres, ARRAY[]::text[]) AS genres,
+                COALESCE(director_data.names, ARRAY[]::text[]) AS director_names,
+                COALESCE(director_data.ids, ARRAY[]::int[]) AS director_ids,
+                ROW_NUMBER() OVER (ORDER BY fr.rank ASC) AS filtered_rank
+            FROM film_rankings fr
+            JOIN films f ON f.id = fr.film_id
+            LEFT JOIN cohort_film_stats stats
+                ON stats.cohort_id = fr.cohort_id AND stats.film_id = fr.film_id
+            LEFT JOIN LATERAL (
+                SELECT
+                    SUM(CASE WHEN r.rating = 0.5 THEN 1 ELSE 0 END) AS count_0_5,
+                    SUM(CASE WHEN r.rating = 1.0 THEN 1 ELSE 0 END) AS count_1_0,
+                    SUM(CASE WHEN r.rating = 1.5 THEN 1 ELSE 0 END) AS count_1_5,
+                    SUM(CASE WHEN r.rating = 2.0 THEN 1 ELSE 0 END) AS count_2_0,
+                    SUM(CASE WHEN r.rating = 2.5 THEN 1 ELSE 0 END) AS count_2_5,
+                    SUM(CASE WHEN r.rating = 3.0 THEN 1 ELSE 0 END) AS count_3_0,
+                    SUM(CASE WHEN r.rating = 3.5 THEN 1 ELSE 0 END) AS count_3_5,
+                    SUM(CASE WHEN r.rating = 4.0 THEN 1 ELSE 0 END) AS count_4_0,
+                    SUM(CASE WHEN r.rating = 4.5 THEN 1 ELSE 0 END) AS count_4_5,
+                    SUM(CASE WHEN r.rating = 5.0 THEN 1 ELSE 0 END) AS count_5_0
+                FROM ratings r
+                JOIN cohort_members cm ON cm.user_id = r.user_id
+                WHERE cm.cohort_id = :cohort_id
+                  AND r.film_id = fr.film_id
+                  AND r.rating IS NOT NULL
+            ) AS hist ON TRUE
+            LEFT JOIN LATERAL (
+                SELECT array_remove(array_agg(g.name ORDER BY g.name), NULL) AS genres
+                FROM film_genres fg
+                JOIN genres g ON g.id = fg.genre_id
+                WHERE fg.film_id = fr.film_id
+            ) AS genre_data ON TRUE
+            LEFT JOIN LATERAL (
+                SELECT
+                    array_remove(
+                        array_agg(p.name ORDER BY COALESCE(fp.credit_order, 1000), p.name),
+                        NULL
+                    ) AS names,
+                    array_remove(
+                        array_agg(p.id ORDER BY COALESCE(fp.credit_order, 1000), p.name),
+                        NULL
+                    ) AS ids
+                FROM film_people fp
+                JOIN people p ON p.id = fp.person_id
+                WHERE fp.film_id = fr.film_id AND fp.role = 'director'
+            ) AS director_data ON TRUE
+            WHERE fr.cohort_id = :cohort_id
+              AND fr.strategy = :strategy
+            {filters_sql}
+        )
+        SELECT *
+        FROM ranked
+        WHERE filtered_rank <= :result_limit
+        ORDER BY filtered_rank ASC
         OFFSET :offset
         LIMIT :limit
         """
