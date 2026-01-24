@@ -109,3 +109,12 @@ docker compose -f docker-compose.dev.yml up --build
 ```
 
 The command exposes the API at [http://localhost:8000](http://localhost:8000) and the frontend at [http://localhost:3000](http://localhost:3000). Hot reload works because the repo is bind-mounted into each container. Hit `Ctrl+C` to stop all services at once.
+
+### Avoiding HTTP 403s
+
+Letterboxd can reject obvious scraper headers. If any pipeline step crashes with a `403 Forbidden` from a Letterboxd URL:
+
+- Set `SCRAPER_USER_AGENT` in your `.env` (or container environment) to a verbatim browser UA string copied from your own network tab.
+- If the target profile only loads when you are logged in, also export `LETTERBOXD_SESSION_COOKIE` with the cookie string copied from your browser (e.g., `lb_session=<value>`). The scraper will send those cookies with every request.
+
+Restart the API and the Celery worker so the new header + cookies apply to future requests.

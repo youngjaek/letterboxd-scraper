@@ -32,6 +32,7 @@ class ScraperSettings:
     retry_limit: int = 3
     retry_backoff_seconds: int = 2
     throttle_seconds: float = 1.0
+    session_cookie: Optional[str] = None
 
 
 @dataclass
@@ -128,6 +129,7 @@ def load_settings(config_path: Optional[Path] = None) -> Settings:
             os.getenv("SCRAPER_RETRY_BACKOFF", scraper_cfg.get("retry_backoff_seconds", 2))
         ),
         throttle_seconds=float(os.getenv("SCRAPER_THROTTLE_SECONDS", scraper_cfg.get("throttle_seconds", 1.0))),
+        session_cookie=os.getenv("LETTERBOXD_SESSION_COOKIE", scraper_cfg.get("session_cookie")),
     )
 
     rss_settings = RSSSettings(
