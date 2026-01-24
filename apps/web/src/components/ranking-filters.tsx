@@ -558,12 +558,9 @@ function WatchersFilters() {
 
   return (
     <div className="flex flex-col gap-2">
-      <div className="flex items-center justify-between">
-        <span className="text-[0.6rem] font-semibold uppercase tracking-[0.2em] text-slate-400">
-          Watchers
-        </span>
-        <span className="text-[0.55rem] uppercase tracking-[0.2em] text-slate-500">Default ≥2</span>
-      </div>
+      <span className="text-[0.6rem] font-semibold uppercase tracking-[0.2em] text-slate-400">
+        Watchers
+      </span>
       <div className="flex flex-wrap gap-3 text-xs text-slate-400">
         <label className="flex flex-col gap-1">
           <span>Count / Range</span>
@@ -647,8 +644,10 @@ export function RankingFilters() {
             mapResponse={mapDirector}
           />
         </div>
-        <ReleaseYearFilters />
-        <WatchersFilters />
+        <div className="grid gap-4 md:grid-cols-2">
+          <ReleaseYearFilters />
+          <WatchersFilters />
+        </div>
         <DistributionFilter />
         <div className="flex justify-end">
           <button
