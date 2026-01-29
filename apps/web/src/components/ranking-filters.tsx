@@ -1,7 +1,8 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState, useTransition } from "react";
-import { usePathname, useRouter, useSearchParams } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
+import { useSyncedSearchParams } from "./search-params-provider";
 import { getApiBase } from "@/lib/api-base";
 
 type Option = {
@@ -67,12 +68,12 @@ function MultiSelectFilter({
 }) {
   const router = useRouter();
   const pathname = usePathname();
-  const searchParams = useSearchParams();
+  const searchParams = useSyncedSearchParams();
   const [query, setQuery] = useState("");
   const [suggestions, setSuggestions] = useState<Option[]>([]);
   const [showSuggestions, setShowSuggestions] = useState(false);
   const [highlightedIndex, setHighlightedIndex] = useState(-1);
-  const selectedValues = useMemo(() => searchParams?.getAll(paramKey) ?? [], [searchParams, paramKey]);
+  const selectedValues = useMemo(() => searchParams.getAll(paramKey), [searchParams, paramKey]);
   const selectedOptions = useSelectedOptions(selectedValues, endpoint, idParam, mapResponse);
 
   useEffect(() => {
@@ -110,7 +111,7 @@ function MultiSelectFilter({
   }, [showSuggestions]);
 
   function updateParams(mutator: (params: URLSearchParams) => void) {
-    const params = new URLSearchParams(searchParams?.toString() ?? "");
+    const params = new URLSearchParams(searchParams.toString());
     mutator(params);
     params.delete("page");
     const queryString = params.toString();
@@ -317,19 +318,19 @@ function formatWatchersRange(min: string, max: string) {
 }
 
 function ReleaseYearFilters() {
-  const searchParams = useSearchParams();
+  const searchParams = useSyncedSearchParams();
   const router = useRouter();
   const pathname = usePathname();
-  const minRaw = searchParams?.get("release_year_min") ?? "";
-  const maxRaw = searchParams?.get("release_year_max") ?? "";
-  const decadeRaw = searchParams?.get("decade") ?? "";
+  const minRaw = searchParams.get("release_year_min") ?? "";
+  const maxRaw = searchParams.get("release_year_max") ?? "";
+  const decadeRaw = searchParams.get("decade") ?? "";
   const computedRangeValue = useMemo(() => formatReleaseYearRange(minRaw, maxRaw), [minRaw, maxRaw]);
   const [rangeValue, setRangeValue] = useState(computedRangeValue);
 
   useEffect(() => setRangeValue(computedRangeValue), [computedRangeValue]);
 
   function commitRange(value: string) {
-    const params = new URLSearchParams(searchParams?.toString() ?? "");
+    const params = new URLSearchParams(searchParams.toString());
     const parsed = parseReleaseYearRange(value);
     if (parsed.min) {
       params.set("release_year_min", parsed.min);
@@ -348,7 +349,7 @@ function ReleaseYearFilters() {
   }
 
   function setDecade(value: string) {
-    const params = new URLSearchParams(searchParams?.toString() ?? "");
+    const params = new URLSearchParams(searchParams.toString());
     if (value) {
       params.set("decade", value);
     } else {
@@ -405,10 +406,10 @@ function ReleaseYearFilters() {
 }
 
 function DistributionFilter() {
-  const searchParams = useSearchParams();
+  const searchParams = useSyncedSearchParams();
   const router = useRouter();
   const pathname = usePathname();
-  const selectedValue = searchParams?.get("distribution") ?? "";
+  const selectedValue = searchParams.get("distribution") ?? "";
   const [optimisticValue, setOptimisticValue] = useState<string | undefined>();
   const [isPending, startTransition] = useTransition();
   const activeValue = optimisticValue ?? selectedValue;
@@ -421,7 +422,7 @@ function DistributionFilter() {
 
   const buildUrl = useCallback(
     (value: string) => {
-      const params = new URLSearchParams(searchParams?.toString() ?? "");
+      const params = new URLSearchParams(searchParams.toString());
       if (value) {
         params.set("distribution", value);
       } else {
@@ -513,11 +514,11 @@ function DistributionFilter() {
 }
 
 function WatchersFilters() {
-  const searchParams = useSearchParams();
+  const searchParams = useSyncedSearchParams();
   const router = useRouter();
   const pathname = usePathname();
-  const minRaw = searchParams?.get("watchers_min") ?? "";
-  const maxRaw = searchParams?.get("watchers_max") ?? "";
+  const minRaw = searchParams.get("watchers_min") ?? "";
+  const maxRaw = searchParams.get("watchers_max") ?? "";
   const computedRangeValue = useMemo(
     () => formatWatchersRange(minRaw, maxRaw),
     [minRaw, maxRaw],
@@ -527,7 +528,7 @@ function WatchersFilters() {
   useEffect(() => setRangeValue(computedRangeValue), [computedRangeValue]);
 
   function commitRange(value: string) {
-    const params = new URLSearchParams(searchParams?.toString() ?? "");
+    const params = new URLSearchParams(searchParams.toString());
     const parsed = parseWatchersRange(value);
     let minValue = parsed.min;
     let maxValue = parsed.max;
@@ -585,7 +586,7 @@ function WatchersFilters() {
 }
 
 export function RankingFilters() {
-  const searchParams = useSearchParams();
+  const searchParams = useSyncedSearchParams();
   const router = useRouter();
   const pathname = usePathname();
   const filterKeys = [
@@ -599,7 +600,7 @@ export function RankingFilters() {
     "watchers_min",
     "watchers_max",
   ];
-  const hasFilters = filterKeys.some((key) => (searchParams?.getAll(key) ?? []).length > 0);
+  const hasFilters = filterKeys.some((key) => searchParams.getAll(key).length > 0);
   const mapGenre = useCallback((item: any) => ({ value: String(item.id), label: item.name }), []);
   const mapCountry = useCallback(
     (item: any) => ({ value: item.code, label: item.name ?? item.code }),
@@ -608,7 +609,7 @@ export function RankingFilters() {
   const mapDirector = useCallback((item: any) => ({ value: String(item.id), label: item.name }), []);
 
   function clearFilters() {
-    const params = new URLSearchParams(searchParams?.toString() ?? "");
+    const params = new URLSearchParams(searchParams.toString());
     filterKeys.forEach((key) => params.delete(key));
     params.delete("page");
     const query = params.toString();

@@ -1,11 +1,12 @@
 import Link from "next/link";
 import { ManageCohortPanel } from "@/components/manage-cohort-panel";
 import { RankingStrategySelect } from "@/components/ranking-strategy-select";
-import { RatingHistogram } from "@/components/rating-histogram";
 import { RankingFilters } from "@/components/ranking-filters";
-import { PaginationControls } from "@/components/pagination-controls";
+import { SearchParamsProvider } from "@/components/search-params-provider";
+import { RankingBrowser } from "@/components/ranking-browser";
 import { serverApiBase } from "@/lib/api-base";
 import { parsePageSize, parseResultLimit } from "@/lib/ranking-options";
+import { RankingRow } from "@/types/ranking-row";
 
 const apiBase = serverApiBase;
 const defaultStrategy = "bayesian";
@@ -44,25 +45,6 @@ type ScrapeProgress = {
   recent_finished: ScrapeMemberStatus[];
 };
 
-type RankingRow = {
-  film_id: number;
-  rank: number | null;
-  score: number;
-  title: string;
-  slug: string;
-  poster_url: string | null;
-  release_year?: number | null;
-  watchers: number | null;
-  avg_rating: number | null;
-  favorite_rate: number | null;
-  like_rate: number | null;
-  distribution_label: string | null;
-  consensus_strength: number | null;
-  rating_histogram: Array<{ key: string; label: string; count: number }>;
-  directors?: Array<{ id: number; name: string }>;
-  genres?: string[];
-};
-
 async function fetchCohort(id: string): Promise<CohortDetail | null> {
   const res = await fetch(`${apiBase}/cohorts/${id}`, { cache: "no-store" });
   if (!res.ok) {
@@ -78,20 +60,47 @@ function getParamValues(value: string | string[] | undefined): string[] {
   return Array.isArray(value) ? value : [value];
 }
 
+function serializeSearchParamsForProvider(params?: Record<string, string | string[] | undefined>): string {
+  const query = new URLSearchParams();
+  if (!params) {
+    return "";
+  }
+  Object.entries(params).forEach(([key, rawValue]) => {
+    if (Array.isArray(rawValue)) {
+      rawValue.forEach((entry) => {
+        if (entry) {
+          query.append(key, entry);
+        }
+      });
+    } else if (rawValue) {
+      query.set(key, rawValue);
+    }
+  });
+  return query.toString();
+}
+
+function parsePage(value: string | string[] | undefined): number {
+  const raw = Array.isArray(value) ? value[0] : value;
+  if (!raw) {
+    return 1;
+  }
+  const parsed = parseInt(raw, 10);
+  if (Number.isNaN(parsed) || parsed < 1) {
+    return 1;
+  }
+  return parsed;
+}
+
 async function fetchRankings(
   id: string,
   strategy: string,
   searchParams: Record<string, string | string[] | undefined> | undefined,
-  pageSize: number,
   resultLimit: number,
 ) {
-  const pageParam = searchParams?.page;
-  const currentPageRaw = Array.isArray(pageParam) ? pageParam[0] : pageParam;
-  const currentPageNum = currentPageRaw ? Math.max(1, parseInt(currentPageRaw, 10) || 1) : 1;
   const query = new URLSearchParams();
   query.set("strategy", strategy);
-  query.set("limit", pageSize.toString());
-  query.set("page", currentPageNum.toString());
+  query.set("limit", resultLimit.toString());
+  query.set("page", "1");
   query.set("result_limit", resultLimit.toString());
   const multiKeys = ["genres", "countries", "directors"];
   multiKeys.forEach((key) => {
@@ -118,10 +127,9 @@ async function fetchRankings(
   const url = `${apiBase}/cohorts/${id}/rankings?${query.toString()}`;
   const res = await fetch(url, { cache: "no-store" });
   if (!res.ok) {
-    return { items: [], total: 0, page: currentPageNum };
+    return { items: [], total: 0 };
   }
-  const data = await res.json();
-  return { ...data, page: currentPageNum };
+  return res.json();
 }
 
 async function fetchScrapeStatus(id: string): Promise<ScrapeProgress | null> {
@@ -130,33 +138,6 @@ async function fetchScrapeStatus(id: string): Promise<ScrapeProgress | null> {
     return null;
   }
   return res.json();
-}
-
-function formatPercent(value: number | null | undefined): string {
-  if (value === null || value === undefined) {
-    return "—";
-  }
-  return `${Math.round(value * 100)}%`;
-}
-
-function formatAverage(value: number | null | undefined): string {
-  if (value === null || value === undefined) {
-    return "—";
-  }
-  return value.toFixed(2);
-}
-
-function letterboxdUrl(slug: string) {
-  return `https://letterboxd.com/film/${slug}/`;
-}
-
-function StatPill({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="flex flex-col rounded-md border border-white/10 bg-black/40 px-3 py-1 text-xs text-white/90">
-      <span className="text-[0.55rem] uppercase tracking-[0.3em] text-slate-400">{label}</span>
-      <span className="text-sm font-semibold text-white">{value}</span>
-    </div>
-  );
 }
 
 export default async function CohortRankingsPage({
@@ -172,6 +153,12 @@ export default async function CohortRankingsPage({
     typeof searchStrategy === "string" && searchStrategy.length > 0 ? searchStrategy : defaultStrategy;
   const selectedPageSize = parsePageSize(searchParams?.limit);
   const selectedResultLimit = parseResultLimit(searchParams?.result_limit);
+  const currentPage = parsePage(searchParams?.page);
+  const sortByParam = Array.isArray(searchParams?.sort_by) ? searchParams?.sort_by[0] : searchParams?.sort_by;
+  const sortOrderParam = Array.isArray(searchParams?.sort_order)
+    ? searchParams?.sort_order[0]
+    : searchParams?.sort_order;
+  const initialQueryString = serializeSearchParamsForProvider(searchParams);
   const cohort = await fetchCohort(routeParams.id);
   if (!cohort) {
     return (
@@ -184,13 +171,11 @@ export default async function CohortRankingsPage({
     );
   }
   const [rankingResponse, scrapeStatus] = await Promise.all([
-    fetchRankings(routeParams.id, strategy, searchParams, selectedPageSize, selectedResultLimit),
+    fetchRankings(routeParams.id, strategy, searchParams, selectedResultLimit),
     fetchScrapeStatus(routeParams.id),
   ]);
   const rankings: RankingRow[] = rankingResponse.items ?? [];
-  const total = rankingResponse.total ?? 0;
-  const currentPage = rankingResponse.page ?? 1;
-  const totalPages = Math.max(1, Math.ceil(total / selectedPageSize));
+  const total = rankingResponse.total ?? rankings.length;
   return (
     <section className="mx-auto flex max-w-4xl flex-col gap-6">
       <div className="rounded-xl border border-white/10 bg-white/5 p-6 space-y-3">
@@ -215,138 +200,24 @@ export default async function CohortRankingsPage({
         </Link>
       </div>
       <ManageCohortPanel cohortId={cohort.id} label={cohort.label} currentTaskId={cohort.current_task_id} members={cohort.members} scrapeStatus={scrapeStatus} />
-      <div className="rounded-xl border border-white/10 bg-white/5">
-        <div className="flex items-center justify-between border-b border-white/10 px-6 py-4 text-xs uppercase tracking-[0.2em] text-slate-400">
-          <span>Rankings</span>
-          <RankingStrategySelect cohortId={cohort.id} currentStrategy={strategy} />
+      <SearchParamsProvider initialQueryString={initialQueryString}>
+        <div className="rounded-xl border border-white/10 bg-white/5">
+          <div className="flex items-center justify-between border-b border-white/10 px-6 py-4 text-xs uppercase tracking-[0.2em] text-slate-400">
+            <span>Rankings</span>
+            <RankingStrategySelect cohortId={cohort.id} currentStrategy={strategy} />
+          </div>
+          <RankingFilters />
+          <RankingBrowser
+            items={rankings}
+            totalItems={total}
+            initialPage={currentPage}
+            initialPageSize={selectedPageSize}
+            initialResultLimit={selectedResultLimit}
+            initialSortBy={sortByParam}
+            initialSortOrder={sortOrderParam}
+          />
         </div>
-        <RankingFilters />
-        <PaginationControls
-          placement="top"
-          page={currentPage}
-          totalPages={totalPages}
-          totalItems={total}
-          pageSize={selectedPageSize}
-          resultLimit={selectedResultLimit}
-        />
-        {rankings.length === 0 ? (
-          <p className="p-6 text-sm text-slate-400">No rankings found for the current filters.</p>
-        ) : (
-          <ol>
-              {rankings.map((item) => {
-                const directorNames = item.directors?.map((director) => director.name).filter(Boolean) ?? [];
-                const primaryDirectors = directorNames.slice(0, 2);
-                const extraDirectors = Math.max(0, directorNames.length - primaryDirectors.length);
-                const genreTags = item.genres ? item.genres.slice(0, 3) : [];
-                const metadataLine = item.release_year || primaryDirectors.length > 0;
-                return (
-                  <li key={item.film_id} className="border-b border-white/5 px-6 py-5 last:border-b-0">
-                    <div className="grid gap-4 sm:grid-cols-[120px,1fr]">
-                      <div className="max-w-[120px]">
-                        <div className="overflow-hidden rounded-lg border border-white/10 bg-black/20">
-                          {item.poster_url ? (
-                            <img
-                              src={item.poster_url}
-                              alt={`${item.title} poster`}
-                              className="h-full w-full object-cover"
-                              loading="lazy"
-                            />
-                          ) : (
-                            <div className="flex aspect-[2/3] items-center justify-center text-xs text-slate-500">
-                              No poster
-                            </div>
-                          )}
-                        </div>
-                      </div>
-                      <div className="grid gap-4 md:grid-cols-[minmax(0,1fr)_220px] md:items-start">
-                        <div className="flex h-full flex-col gap-3">
-                        <div className="space-y-1">
-                          <p className="text-sm uppercase tracking-[0.3em] text-brand-accent">
-                            #{item.rank ?? "?"}
-                          </p>
-                          <div className="flex flex-wrap items-baseline gap-2">
-                            <Link
-                              href={letterboxdUrl(item.slug)}
-                              target="_blank"
-                              className="text-xl font-semibold text-white hover:text-brand-primary"
-                            >
-                              {item.title}
-                            </Link>
-                            {metadataLine ? (
-                              <span className="text-sm text-slate-300">
-                                {item.release_year ? `(${item.release_year})` : ""}
-                                {item.release_year && primaryDirectors.length ? " " : ""}
-                                {primaryDirectors.length
-                                  ? `by ${primaryDirectors.join(", ")}${
-                                      extraDirectors > 0 ? ` +${extraDirectors} more` : ""
-                                    }`
-                                  : ""}
-                              </span>
-                            ) : null}
-                          </div>
-                        </div>
-                          <p className="text-xs text-slate-500">{item.slug}</p>
-                          <div className="min-h-[32px]">
-                            {genreTags.length ? (
-                              <div className="flex flex-wrap gap-1.5 text-[0.55rem] uppercase tracking-[0.25em] text-slate-400">
-                                {genreTags.map((genre) => (
-                                  <span
-                                    key={genre}
-                                    className="rounded-full border border-white/15 px-2 py-0.5 text-slate-200/80"
-                                  >
-                                    {genre}
-                                  </span>
-                                ))}
-                              </div>
-                            ) : (
-                              <div className="h-4" aria-hidden="true" />
-                            )}
-                          </div>
-                        <div className="mt-auto flex flex-wrap items-end gap-3">
-                          <StatPill label="Watchers" value={item.watchers?.toLocaleString() ?? "—"} />
-                          <StatPill label="Avg" value={formatAverage(item.avg_rating)} />
-                          <StatPill label="Fav %" value={formatPercent(item.favorite_rate)} />
-                          <StatPill label="Like %" value={formatPercent(item.like_rate)} />
-                          <StatPill
-                              label="Consensus"
-                              value={
-                                item.consensus_strength !== null && item.consensus_strength !== undefined
-                                  ? item.consensus_strength.toFixed(2)
-                                  : "—"
-                              }
-                            />
-                          </div>
-                        </div>
-                        <div className="flex h-full flex-col">
-                          <div className="text-right text-xs uppercase text-slate-400">
-                            <p className="font-semibold text-white">
-                              Score <span className="text-brand-primary">{item.score.toFixed(3)}</span>
-                            </p>
-                            <p>Distribution {item.distribution_label ?? "mixed"}</p>
-                          </div>
-                          <div className="mt-auto w-full rounded-lg border border-white/10 bg-black/30 px-2 py-1">
-                            {item.rating_histogram?.length ? (
-                              <RatingHistogram bins={item.rating_histogram} watchers={item.watchers} />
-                            ) : (
-                              <div className="text-center text-[0.6rem] text-slate-500">No data</div>
-                            )}
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-                  </li>
-                );
-              })}
-          </ol>
-        )}
-        <PaginationControls
-          page={currentPage}
-          totalPages={totalPages}
-          totalItems={total}
-          pageSize={selectedPageSize}
-          resultLimit={selectedResultLimit}
-        />
-      </div>
+      </SearchParamsProvider>
     </section>
   );
 }

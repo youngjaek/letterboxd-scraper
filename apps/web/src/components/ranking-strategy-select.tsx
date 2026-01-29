@@ -1,7 +1,8 @@
 "use client";
 
 import { type ChangeEvent, useMemo } from "react";
-import { usePathname, useRouter, useSearchParams } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
+import { useSyncedSearchParams } from "./search-params-provider";
 
 const STRATEGIES: Array<{ value: string; label: string }> = [
   { value: "bayesian", label: "Bayesian Mean" },
@@ -10,13 +11,13 @@ const STRATEGIES: Array<{ value: string; label: string }> = [
 
 export function RankingStrategySelect({ cohortId, currentStrategy }: { cohortId: number; currentStrategy: string }) {
   const router = useRouter();
-  const searchParams = useSearchParams();
+  const searchParams = useSyncedSearchParams();
   const pathname = usePathname();
   const options = useMemo(() => STRATEGIES, []);
 
   function handleChange(event: ChangeEvent<HTMLSelectElement>) {
     const nextStrategy = event.target.value;
-    const params = new URLSearchParams(searchParams?.toString() ?? "");
+    const params = new URLSearchParams(searchParams.toString());
     if (nextStrategy === "bayesian") {
       params.delete("strategy");
     } else {

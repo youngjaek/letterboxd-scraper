@@ -1,13 +1,8 @@
 "use client";
 
 import { FormEvent, useEffect, useState } from "react";
-import { usePathname, useRouter, useSearchParams } from "next/navigation";
-import {
-  DEFAULT_PAGE_SIZE,
-  DEFAULT_RESULT_LIMIT,
-  PAGE_SIZE_OPTIONS,
-  RESULT_LIMIT_OPTIONS,
-} from "@/lib/ranking-options";
+import { PAGE_SIZE_OPTIONS, RESULT_LIMIT_OPTIONS } from "@/lib/ranking-options";
+import { RankingSortOption } from "@/lib/ranking-sort";
 
 type PaginationControlsProps = {
   page: number;
@@ -16,6 +11,12 @@ type PaginationControlsProps = {
   placement?: "top" | "bottom";
   pageSize: number;
   resultLimit: number;
+  sortValue: string;
+  sortOptions: RankingSortOption[];
+  onPageChange: (nextPage: number) => void;
+  onPageSizeChange: (nextSize: number) => void;
+  onResultLimitChange: (nextLimit: number) => void;
+  onSortChange: (nextValue: string) => void;
 };
 
 function PaginationButton({
@@ -56,10 +57,13 @@ export function PaginationControls({
   placement = "bottom",
   pageSize,
   resultLimit,
+  sortValue,
+  sortOptions,
+  onPageChange,
+  onPageSizeChange,
+  onResultLimitChange,
+  onSortChange,
 }: PaginationControlsProps) {
-  const router = useRouter();
-  const pathname = usePathname();
-  const searchParams = useSearchParams();
   const [jumpValue, setJumpValue] = useState(String(page));
   const [toastMessage, setToastMessage] = useState<string | null>(null);
   const [toastVisible, setToastVisible] = useState(false);
@@ -98,14 +102,7 @@ export function PaginationControls({
     if (target === page) {
       return;
     }
-    const params = new URLSearchParams(searchParams?.toString() ?? "");
-    if (target <= 1) {
-      params.delete("page");
-    } else {
-      params.set("page", String(target));
-    }
-    const query = params.toString();
-    router.push(query ? `${pathname}?${query}` : pathname, { scroll: false });
+    onPageChange(target);
   }
 
   function handleJumpChange(value: string) {
@@ -113,24 +110,19 @@ export function PaginationControls({
     setJumpValue(numeric);
   }
 
-  function updateParam(paramName: string, nextValue: number, defaultValue: number) {
-    const params = new URLSearchParams(searchParams?.toString() ?? "");
-    if (nextValue === defaultValue) {
-      params.delete(paramName);
-    } else {
-      params.set(paramName, String(nextValue));
-    }
-    params.delete("page");
-    const query = params.toString();
-    router.push(query ? `${pathname}?${query}` : pathname, { scroll: false });
-  }
-
   function handleResultLimitChange(nextValue: number) {
-    updateParam("result_limit", nextValue, DEFAULT_RESULT_LIMIT);
+    onResultLimitChange(nextValue);
   }
 
   function handlePageSizeChange(nextValue: number) {
-    updateParam("limit", nextValue, DEFAULT_PAGE_SIZE);
+    onPageSizeChange(nextValue);
+  }
+
+  function handleSortChange(nextValue: string) {
+    if (nextValue === sortValue) {
+      return;
+    }
+    onSortChange(nextValue);
   }
 
   function submitJump(event: FormEvent<HTMLFormElement>) {
@@ -156,7 +148,7 @@ export function PaginationControls({
 
   return (
     <div className={containerClasses}>
-      <div className="flex flex-wrap items-center gap-3">
+      <div className="flex flex-1 flex-wrap items-center gap-3">
         <span className="text-[0.65rem] uppercase tracking-[0.2em] text-slate-400">{summary}</span>
         <div className="flex flex-wrap items-center gap-3 text-[0.65rem] uppercase tracking-[0.2em] text-slate-400">
           <label className="flex items-center gap-2">
@@ -183,6 +175,21 @@ export function PaginationControls({
               {PAGE_SIZE_OPTIONS.map((option) => (
                 <option key={option} value={option}>
                   {option}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="flex items-center gap-2">
+            Sort
+            <select
+              className="appearance-none rounded border border-white/15 bg-black/30 px-2 py-1 text-[0.75rem] text-white focus:border-brand-primary focus:outline-none"
+              value={sortValue}
+              onChange={(event) => handleSortChange(event.target.value)}
+              aria-label="Sort rankings"
+            >
+              {sortOptions.map((option) => (
+                <option key={option.value} value={option.value}>
+                  {option.label}
                 </option>
               ))}
             </select>

@@ -40,6 +40,16 @@ DISTRIBUTION_LABELS = [
 
 RESULT_LIMIT_OPTIONS = [100, 250, 500, 1000]
 
+SORTABLE_FIELDS: dict[str, str] = {
+    "score": "score",
+    "watchers": "watchers",
+    "release_year": "release_year",
+    "avg_rating": "avg_rating",
+}
+DEFAULT_SORT_BY = "score"
+DEFAULT_SORT_ORDER = "desc"
+SORT_ORDER_VALUES = {"asc", "desc"}
+
 DISTRIBUTION_LABEL_SQL = """
 CASE
     WHEN COALESCE(stats.watchers, 0) <= 0 THEN 'unknown'
@@ -263,6 +273,8 @@ def list_rankings(
     limit: int = 50,
     page: int = 1,
     result_limit: int = Query(250),
+    sort_by: str = Query(DEFAULT_SORT_BY),
+    sort_order: str = Query(DEFAULT_SORT_ORDER),
     genres: List[int] | None = Query(None),
     countries: List[str] | None = Query(None),
     directors: List[int] | None = Query(None),
@@ -274,7 +286,7 @@ def list_rankings(
     watchers_max: int | None = Query(None, ge=0),
     session: Session = Depends(get_db_session),
 ) -> RankingListResponse:
-    limit = max(1, min(limit, 100))
+    limit = max(1, min(limit, result_limit, 1000))
     page = max(1, page)
     offset = (page - 1) * limit
     if result_limit not in RESULT_LIMIT_OPTIONS:
@@ -282,6 +294,21 @@ def list_rankings(
             status_code=400,
             detail=f"result_limit must be one of {', '.join(str(value) for value in RESULT_LIMIT_OPTIONS)}",
         )
+    normalized_sort_by = sort_by.lower()
+    sort_field = SORTABLE_FIELDS.get(normalized_sort_by)
+    if not sort_field:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Invalid sort_by '{sort_by}'. Allowed: {', '.join(SORTABLE_FIELDS.keys())}",
+        )
+    normalized_sort_order = sort_order.lower()
+    if normalized_sort_order not in SORT_ORDER_VALUES:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Invalid sort_order '{sort_order}'. Allowed: {', '.join(SORT_ORDER_VALUES)}",
+        )
+    order_direction = "ASC" if normalized_sort_order == "asc" else "DESC"
+    order_clause = f"{sort_field} {order_direction} NULLS LAST, filtered_rank ASC"
     params: dict[str, object] = {
         "cohort_id": cohort_id,
         "strategy": strategy,
@@ -457,7 +484,7 @@ def list_rankings(
         SELECT *
         FROM ranked
         WHERE filtered_rank <= :result_limit
-        ORDER BY filtered_rank ASC
+        ORDER BY {order_clause}
         OFFSET :offset
         LIMIT :limit
         """
