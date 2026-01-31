@@ -2,7 +2,9 @@ from __future__ import annotations
 
 from datetime import datetime
 from typing import List
+from urllib.parse import urlparse
 
+import httpx
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import desc, func, select, text
 from sqlalchemy.orm import Session, joinedload
@@ -10,6 +12,7 @@ from sqlalchemy.orm import Session, joinedload
 from letterboxd_scraper import config, services
 from letterboxd_scraper.pipeline import tasks as pipeline_tasks
 from letterboxd_scraper.db import models
+from letterboxd_scraper.scrapers.listings import FilmListEntry, PosterListingScraper
 from ..auth import require_api_user
 from ..dependencies import get_db_session, get_settings
 from ..schemas import (
@@ -49,6 +52,113 @@ SORTABLE_FIELDS: dict[str, str] = {
 DEFAULT_SORT_BY = "score"
 DEFAULT_SORT_ORDER = "desc"
 SORT_ORDER_VALUES = {"asc", "desc"}
+
+
+def _extract_letterboxd_film_ids(
+    source_url: str,
+    session: Session,
+    settings: config.Settings,
+) -> list[int]:
+    if not source_url:
+        return []
+    scraper = PosterListingScraper(settings)
+    entries: list[FilmListEntry] = []
+    try:
+        entries = list(scraper.iter_list_entries(source_url))
+        if not entries:
+            entries = list(scraper.iter_single_page(source_url))
+        if not entries and _looks_like_collection_path(source_url):
+            entries = _fetch_collection_entries(scraper, source_url)
+    except httpx.HTTPError as exc:
+        raise HTTPException(status_code=400, detail=f"Failed to load Letterboxd source: {exc}") from exc
+    finally:
+        scraper.close()
+    if not entries:
+        raise HTTPException(status_code=400, detail="No films detected in the provided Letterboxd URL.")
+    slugs = [entry.slug for entry in entries if entry.slug]
+    if not slugs:
+        raise HTTPException(status_code=400, detail="No film slugs detected in the provided Letterboxd URL.")
+    film_rows = (
+        session.query(models.Film.id, models.Film.slug)
+        .filter(models.Film.slug.in_(slugs))
+        .all()
+    )
+    film_by_slug = {row.slug: int(row.id) for row in film_rows}
+    ordered_ids: list[int] = []
+    seen_ids: set[int] = set()
+    for slug in slugs:
+        film_id = film_by_slug.get(slug)
+        if not film_id or film_id in seen_ids:
+            continue
+        seen_ids.add(film_id)
+        ordered_ids.append(film_id)
+    if not ordered_ids:
+        raise HTTPException(
+            status_code=404,
+            detail="None of the films from the provided Letterboxd URL exist in this database.",
+        )
+    return ordered_ids
+
+
+def _normalize_letterboxd_url(value: str) -> str:
+    raw = (value or "").strip()
+    if not raw:
+        return ""
+    if not raw.startswith(("http://", "https://")):
+        raw = f"https://letterboxd.com/{raw.lstrip('/')}"
+    parsed = urlparse(raw)
+    scheme = parsed.scheme or "https"
+    netloc = parsed.netloc or "letterboxd.com"
+    path = parsed.path or "/"
+    if not path.startswith("/"):
+        path = "/" + path
+    if not path.endswith("/"):
+        path += "/"
+    query = f"?{parsed.query}" if parsed.query else ""
+    return f"{scheme}://{netloc}{path}{query}"
+
+
+def _looks_like_collection_path(value: str) -> bool:
+    normalized = _normalize_letterboxd_url(value)
+    if not normalized:
+        return False
+    parsed = urlparse(normalized)
+    segments = [segment for segment in parsed.path.strip("/").split("/") if segment]
+    return len(segments) >= 3 and segments[0] == "films" and segments[1] == "in"
+
+
+def _fetch_collection_entries(scraper: PosterListingScraper, source_url: str) -> list[FilmListEntry]:
+    normalized = _normalize_letterboxd_url(source_url)
+    if not normalized:
+        return []
+    parsed = urlparse(normalized)
+    segments = [segment for segment in parsed.path.strip("/").split("/") if segment]
+    if len(segments) < 3 or segments[0] != "films" or segments[1] != "in":
+        return []
+    while len(segments) >= 2 and segments[-2] == "page" and segments[-1].isdigit():
+        segments = segments[:-2]
+    remainder = "/".join(segments[1:])
+    base = f"{parsed.scheme or 'https'}://{parsed.netloc or 'letterboxd.com'}"
+    query = f"?{parsed.query}" if parsed.query else ""
+    collected: list[FilmListEntry] = []
+    page = 1
+    while True:
+        ajax_url = f"{base}/films/ajax/{remainder}/page/{page}/"
+        if query:
+            ajax_url = f"{ajax_url}{query}"
+        try:
+            response = scraper.client.get(ajax_url)
+        except httpx.HTTPStatusError as exc:
+            if page > 1 and exc.response.status_code == 404:
+                break
+            raise
+        chunk = PosterListingScraper.parse_html(response.text)
+        if not chunk:
+            break
+        collected.extend(chunk)
+        page += 1
+    return collected
+
 
 DISTRIBUTION_LABEL_SQL = """
 CASE
@@ -275,6 +385,10 @@ def list_rankings(
     result_limit: int = Query(250),
     sort_by: str = Query(DEFAULT_SORT_BY),
     sort_order: str = Query(DEFAULT_SORT_ORDER),
+    letterboxd_source: str | None = Query(
+        None,
+        description="Letterboxd list/filmography URL (or path) used to filter rankings to matching films.",
+    ),
     genres: List[int] | None = Query(None),
     countries: List[str] | None = Query(None),
     directors: List[int] | None = Query(None),
@@ -285,6 +399,7 @@ def list_rankings(
     watchers_min: int | None = Query(2, ge=0),
     watchers_max: int | None = Query(None, ge=0),
     session: Session = Depends(get_db_session),
+    settings: config.Settings = Depends(get_settings),
 ) -> RankingListResponse:
     limit = max(1, min(limit, result_limit, 1000))
     page = max(1, page)
@@ -375,6 +490,10 @@ def list_rankings(
             )
         params["watchers_max"] = watchers_max
         filter_clauses.append("COALESCE(stats.watchers, 0) <= :watchers_max")
+    if letterboxd_source:
+        filter_film_ids = _extract_letterboxd_film_ids(letterboxd_source, session, settings)
+        params["filter_film_ids"] = filter_film_ids
+        filter_clauses.append("fr.film_id = ANY(:filter_film_ids)")
     filters_sql = ""
     if filter_clauses:
         filters_sql = " AND " + " AND ".join(filter_clauses)

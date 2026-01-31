@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState, useTransition } from "react";
+import { FormEvent, useCallback, useEffect, useMemo, useRef, useState, useTransition } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import { useSyncedSearchParams } from "./search-params-provider";
 import { getApiBase } from "@/lib/api-base";
@@ -585,6 +585,97 @@ function WatchersFilters() {
   );
 }
 
+function LetterboxdSourceFilter() {
+  const searchParams = useSyncedSearchParams();
+  const router = useRouter();
+  const pathname = usePathname();
+  const appliedValue = searchParams.get("letterboxd_source") ?? "";
+  const [value, setValue] = useState(appliedValue);
+  const [isPending, startTransition] = useTransition();
+
+  useEffect(() => {
+    setValue(appliedValue);
+  }, [appliedValue]);
+
+  function updateFilter(nextValue: string) {
+    const params = new URLSearchParams(searchParams.toString());
+    const trimmed = nextValue.trim();
+    if (trimmed) {
+      params.set("letterboxd_source", trimmed);
+    } else {
+      params.delete("letterboxd_source");
+    }
+    params.delete("page");
+    const query = params.toString();
+    startTransition(() => {
+      router.push(query ? `${pathname}?${query}` : pathname, { scroll: false });
+    });
+  }
+
+  function handleSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    updateFilter(value);
+  }
+
+  function clearValue() {
+    if (!appliedValue) {
+      setValue("");
+      return;
+    }
+    setValue("");
+    updateFilter("");
+  }
+
+  return (
+    <div className="flex flex-col gap-2">
+      <span className="text-[0.6rem] font-semibold uppercase tracking-[0.2em] text-slate-400">
+        Letterboxd List / Filmography
+      </span>
+      <form
+        onSubmit={handleSubmit}
+        className="flex flex-col gap-3 text-xs text-slate-400 md:flex-row md:items-end"
+      >
+        <label className="flex flex-1 flex-col gap-1">
+          <span>Paste URL or boxd.it link</span>
+          <input
+            type="text"
+            value={value}
+            placeholder="https://letterboxd.com/..."
+            onChange={(event) => setValue(event.target.value)}
+            className="w-full rounded border border-white/10 bg-black/40 px-3 py-2 text-sm text-white focus:border-brand-primary focus:outline-none"
+          />
+        </label>
+        <div className="flex items-center gap-2">
+          <button
+            type="submit"
+            disabled={isPending}
+            className="rounded border border-brand-primary/60 bg-brand-primary/10 px-4 py-2 text-[0.6rem] uppercase tracking-[0.2em] text-white transition hover:border-brand-primary hover:bg-brand-primary/20 disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            {isPending ? "Applying…" : "Apply"}
+          </button>
+          <button
+            type="button"
+            onClick={clearValue}
+            disabled={isPending}
+            className="rounded border border-white/15 px-3 py-2 text-[0.6rem] uppercase tracking-[0.2em] text-white/80 hover:border-white/30 hover:text-white disabled:cursor-not-allowed disabled:opacity-40"
+          >
+            Clear
+          </button>
+        </div>
+      </form>
+      <p className="text-[0.65rem] text-slate-500">
+        Works with Letterboxd lists, short <span className="text-white/70">boxd.it</span> links, or filmography pages.
+        Results show only films present in the provided source.
+      </p>
+      {appliedValue ? (
+        <p className="text-[0.65rem] text-slate-400">
+          Filtering by <span className="font-mono text-white/80">{appliedValue}</span>
+        </p>
+      ) : null}
+    </div>
+  );
+}
+
 export function RankingFilters() {
   const searchParams = useSyncedSearchParams();
   const router = useRouter();
@@ -599,6 +690,7 @@ export function RankingFilters() {
     "decade",
     "watchers_min",
     "watchers_max",
+    "letterboxd_source",
   ];
   const hasFilters = filterKeys.some((key) => searchParams.getAll(key).length > 0);
   const mapGenre = useCallback((item: any) => ({ value: String(item.id), label: item.name }), []);
@@ -649,6 +741,7 @@ export function RankingFilters() {
           <ReleaseYearFilters />
           <WatchersFilters />
         </div>
+        <LetterboxdSourceFilter />
         <DistributionFilter />
         <div className="flex justify-end">
           <button

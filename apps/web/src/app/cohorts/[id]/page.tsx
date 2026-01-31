@@ -117,6 +117,7 @@ async function fetchRankings(
     "decade",
     "watchers_min",
     "watchers_max",
+    "letterboxd_source",
   ];
   singleKeys.forEach((key) => {
     const raw = Array.isArray(searchParams?.[key]) ? searchParams?.[key]?.[0] : searchParams?.[key];

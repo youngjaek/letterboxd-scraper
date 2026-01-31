@@ -7,7 +7,7 @@ export type RankingSortOption = {
 
 export const DEFAULT_RANKING_SORT: RankingSortOption = {
   value: "score_desc",
-  label: "Default ranking score (desc)",
+  label: "Ranking (desc)",
   sortBy: "score",
   sortOrder: "desc",
 };
@@ -16,7 +16,7 @@ export const RANKING_SORT_OPTIONS: RankingSortOption[] = [
   DEFAULT_RANKING_SORT,
   {
     value: "score_asc",
-    label: "Default ranking score (asc)",
+    label: "Ranking (asc)",
     sortBy: "score",
     sortOrder: "asc",
   },
