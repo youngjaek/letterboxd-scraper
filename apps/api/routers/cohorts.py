@@ -32,12 +32,7 @@ router = APIRouter(prefix="/cohorts", tags=["cohorts"])
 
 DISTRIBUTION_LABELS = [
     "unknown",
-    "strong-left",
-    "left",
-    "right",
-    "bimodal-low-high",
-    "bimodal-mid",
-    "balanced",
+    "five-star-dominant",
     "mixed",
 ]
 
@@ -162,51 +157,27 @@ def _fetch_collection_entries(scraper: PosterListingScraper, source_url: str) ->
 
 DISTRIBUTION_LABEL_SQL = """
 CASE
+    WHEN COALESCE(stats.watchers, 0) > 0
+        AND (
+            COALESCE(hist.count_5_0, 0)::float / NULLIF(stats.watchers::float, 0)
+        ) >= 0.4
+        AND (
+            GREATEST(
+                COALESCE(hist.count_4_5, 0),
+                COALESCE(hist.count_4_0, 0),
+                COALESCE(hist.count_3_5, 0),
+                COALESCE(hist.count_3_0, 0),
+                COALESCE(hist.count_2_5, 0),
+                COALESCE(hist.count_2_0, 0),
+                COALESCE(hist.count_1_5, 0),
+                COALESCE(hist.count_1_0, 0),
+                COALESCE(hist.count_0_5, 0)
+            )::float / NULLIF(stats.watchers::float, 0)
+        ) <= (
+            COALESCE(hist.count_5_0, 0)::float / NULLIF(stats.watchers::float, 0)
+        ) / 2
+    THEN 'five-star-dominant'
     WHEN COALESCE(stats.watchers, 0) <= 0 THEN 'unknown'
-    WHEN (
-        COALESCE(stats.count_rating_gte_4_5, 0)::float / NULLIF(stats.watchers::float, 0) >= 0.4
-        AND (
-            (COALESCE(stats.count_rating_2_5_3_0, 0) + COALESCE(stats.count_rating_lt_2_5, 0))::float
-            / NULLIF(stats.watchers::float, 0)
-        ) <= 0.1
-    ) THEN 'strong-left'
-    WHEN (
-        (
-            COALESCE(stats.count_rating_gte_4_5, 0) + COALESCE(stats.count_rating_4_0_4_5, 0)
-        )::float / NULLIF(stats.watchers::float, 0) >= 0.6
-        AND (
-            (COALESCE(stats.count_rating_2_5_3_0, 0) + COALESCE(stats.count_rating_lt_2_5, 0))::float
-            / NULLIF(stats.watchers::float, 0)
-        ) <= 0.15
-    ) THEN 'left'
-    WHEN (
-        (
-            COALESCE(stats.count_rating_2_5_3_0, 0) + COALESCE(stats.count_rating_lt_2_5, 0)
-        )::float / NULLIF(stats.watchers::float, 0) >= 0.45
-        AND (
-            COALESCE(stats.count_rating_gte_4_5, 0) + COALESCE(stats.count_rating_4_0_4_5, 0)
-        )::float / NULLIF(stats.watchers::float, 0) <= 0.2
-    ) THEN 'right'
-    WHEN (
-        (
-            COALESCE(stats.count_rating_2_5_3_0, 0) + COALESCE(stats.count_rating_lt_2_5, 0)
-        )::float / NULLIF(stats.watchers::float, 0) >= 0.35
-        AND (
-            COALESCE(stats.count_rating_gte_4_5, 0) + COALESCE(stats.count_rating_4_0_4_5, 0)
-        )::float / NULLIF(stats.watchers::float, 0) >= 0.25
-    ) THEN 'bimodal-low-high'
-    WHEN (
-        COALESCE(stats.count_rating_3_0_3_5, 0)::float / NULLIF(stats.watchers::float, 0) >= 0.25
-        AND COALESCE(stats.count_rating_3_5_4_0, 0)::float / NULLIF(stats.watchers::float, 0) >= 0.25
-    ) THEN 'bimodal-mid'
-    WHEN (
-        (
-            COALESCE(stats.count_rating_3_5_4_0, 0) + COALESCE(stats.count_rating_3_0_3_5, 0)
-        )::float / NULLIF(stats.watchers::float, 0) >= 0.6
-        AND (
-            COALESCE(stats.count_rating_2_5_3_0, 0) + COALESCE(stats.count_rating_lt_2_5, 0)
-        )::float / NULLIF(stats.watchers::float, 0) <= 0.2
-    ) THEN 'balanced'
     ELSE 'mixed'
 END
 """.strip()
@@ -506,6 +477,24 @@ def list_rankings(
             JOIN films f ON f.id = fr.film_id
             LEFT JOIN cohort_film_stats stats
                 ON stats.cohort_id = fr.cohort_id AND stats.film_id = fr.film_id
+            LEFT JOIN LATERAL (
+                SELECT
+                    SUM(CASE WHEN r.rating = 0.5 THEN 1 ELSE 0 END) AS count_0_5,
+                    SUM(CASE WHEN r.rating = 1.0 THEN 1 ELSE 0 END) AS count_1_0,
+                    SUM(CASE WHEN r.rating = 1.5 THEN 1 ELSE 0 END) AS count_1_5,
+                    SUM(CASE WHEN r.rating = 2.0 THEN 1 ELSE 0 END) AS count_2_0,
+                    SUM(CASE WHEN r.rating = 2.5 THEN 1 ELSE 0 END) AS count_2_5,
+                    SUM(CASE WHEN r.rating = 3.0 THEN 1 ELSE 0 END) AS count_3_0,
+                    SUM(CASE WHEN r.rating = 3.5 THEN 1 ELSE 0 END) AS count_3_5,
+                    SUM(CASE WHEN r.rating = 4.0 THEN 1 ELSE 0 END) AS count_4_0,
+                    SUM(CASE WHEN r.rating = 4.5 THEN 1 ELSE 0 END) AS count_4_5,
+                    SUM(CASE WHEN r.rating = 5.0 THEN 1 ELSE 0 END) AS count_5_0
+                FROM ratings r
+                JOIN cohort_members cm ON cm.user_id = r.user_id
+                WHERE cm.cohort_id = :cohort_id
+                  AND r.film_id = fr.film_id
+                  AND r.rating IS NOT NULL
+            ) AS hist ON TRUE
             WHERE fr.cohort_id = :cohort_id
               AND fr.strategy = :strategy
             {filters_sql}
