@@ -159,22 +159,22 @@ DISTRIBUTION_LABEL_SQL = """
 CASE
     WHEN COALESCE(stats.watchers, 0) > 0
         AND (
-            COALESCE(hist.count_5_0, 0)::float / NULLIF(stats.watchers::float, 0)
+            COALESCE(stats.count_rating_5_0, 0)::float / NULLIF(stats.watchers::float, 0)
         ) >= 0.4
         AND (
             GREATEST(
-                COALESCE(hist.count_4_5, 0),
-                COALESCE(hist.count_4_0, 0),
-                COALESCE(hist.count_3_5, 0),
-                COALESCE(hist.count_3_0, 0),
-                COALESCE(hist.count_2_5, 0),
-                COALESCE(hist.count_2_0, 0),
-                COALESCE(hist.count_1_5, 0),
-                COALESCE(hist.count_1_0, 0),
-                COALESCE(hist.count_0_5, 0)
+                COALESCE(stats.count_rating_4_5, 0),
+                COALESCE(stats.count_rating_4_0, 0),
+                COALESCE(stats.count_rating_3_5, 0),
+                COALESCE(stats.count_rating_3_0, 0),
+                COALESCE(stats.count_rating_2_5, 0),
+                COALESCE(stats.count_rating_2_0, 0),
+                COALESCE(stats.count_rating_1_5, 0),
+                COALESCE(stats.count_rating_1_0, 0),
+                COALESCE(stats.count_rating_0_5, 0)
             )::float / NULLIF(stats.watchers::float, 0)
         ) <= (
-            COALESCE(hist.count_5_0, 0)::float / NULLIF(stats.watchers::float, 0)
+            COALESCE(stats.count_rating_5_0, 0)::float / NULLIF(stats.watchers::float, 0)
         ) / 2
     THEN 'five-star-dominant'
     WHEN COALESCE(stats.watchers, 0) <= 0 THEN 'unknown'
@@ -477,24 +477,6 @@ def list_rankings(
             JOIN films f ON f.id = fr.film_id
             LEFT JOIN cohort_film_stats stats
                 ON stats.cohort_id = fr.cohort_id AND stats.film_id = fr.film_id
-            LEFT JOIN LATERAL (
-                SELECT
-                    SUM(CASE WHEN r.rating = 0.5 THEN 1 ELSE 0 END) AS count_0_5,
-                    SUM(CASE WHEN r.rating = 1.0 THEN 1 ELSE 0 END) AS count_1_0,
-                    SUM(CASE WHEN r.rating = 1.5 THEN 1 ELSE 0 END) AS count_1_5,
-                    SUM(CASE WHEN r.rating = 2.0 THEN 1 ELSE 0 END) AS count_2_0,
-                    SUM(CASE WHEN r.rating = 2.5 THEN 1 ELSE 0 END) AS count_2_5,
-                    SUM(CASE WHEN r.rating = 3.0 THEN 1 ELSE 0 END) AS count_3_0,
-                    SUM(CASE WHEN r.rating = 3.5 THEN 1 ELSE 0 END) AS count_3_5,
-                    SUM(CASE WHEN r.rating = 4.0 THEN 1 ELSE 0 END) AS count_4_0,
-                    SUM(CASE WHEN r.rating = 4.5 THEN 1 ELSE 0 END) AS count_4_5,
-                    SUM(CASE WHEN r.rating = 5.0 THEN 1 ELSE 0 END) AS count_5_0
-                FROM ratings r
-                JOIN cohort_members cm ON cm.user_id = r.user_id
-                WHERE cm.cohort_id = :cohort_id
-                  AND r.film_id = fr.film_id
-                  AND r.rating IS NOT NULL
-            ) AS hist ON TRUE
             WHERE fr.cohort_id = :cohort_id
               AND fr.strategy = :strategy
             {filters_sql}
@@ -528,16 +510,16 @@ def list_rankings(
                 stats.count_rating_3_0_3_5,
                 stats.count_rating_2_5_3_0,
                 stats.count_rating_lt_2_5,
-                hist.count_0_5,
-                hist.count_1_0,
-                hist.count_1_5,
-                hist.count_2_0,
-                hist.count_2_5,
-                hist.count_3_0,
-                hist.count_3_5,
-                hist.count_4_0,
-                hist.count_4_5,
-                hist.count_5_0,
+                stats.count_rating_0_5 AS count_0_5,
+                stats.count_rating_1_0 AS count_1_0,
+                stats.count_rating_1_5 AS count_1_5,
+                stats.count_rating_2_0 AS count_2_0,
+                stats.count_rating_2_5 AS count_2_5,
+                stats.count_rating_3_0 AS count_3_0,
+                stats.count_rating_3_5 AS count_3_5,
+                stats.count_rating_4_0 AS count_4_0,
+                stats.count_rating_4_5 AS count_4_5,
+                stats.count_rating_5_0 AS count_5_0,
                 {DISTRIBUTION_LABEL_SQL} AS distribution_label,
                 COALESCE(genre_data.genres, ARRAY[]::text[]) AS genres,
                 COALESCE(director_data.names, ARRAY[]::text[]) AS director_names,
@@ -547,24 +529,6 @@ def list_rankings(
             JOIN films f ON f.id = fr.film_id
             LEFT JOIN cohort_film_stats stats
                 ON stats.cohort_id = fr.cohort_id AND stats.film_id = fr.film_id
-            LEFT JOIN LATERAL (
-                SELECT
-                    SUM(CASE WHEN r.rating = 0.5 THEN 1 ELSE 0 END) AS count_0_5,
-                    SUM(CASE WHEN r.rating = 1.0 THEN 1 ELSE 0 END) AS count_1_0,
-                    SUM(CASE WHEN r.rating = 1.5 THEN 1 ELSE 0 END) AS count_1_5,
-                    SUM(CASE WHEN r.rating = 2.0 THEN 1 ELSE 0 END) AS count_2_0,
-                    SUM(CASE WHEN r.rating = 2.5 THEN 1 ELSE 0 END) AS count_2_5,
-                    SUM(CASE WHEN r.rating = 3.0 THEN 1 ELSE 0 END) AS count_3_0,
-                    SUM(CASE WHEN r.rating = 3.5 THEN 1 ELSE 0 END) AS count_3_5,
-                    SUM(CASE WHEN r.rating = 4.0 THEN 1 ELSE 0 END) AS count_4_0,
-                    SUM(CASE WHEN r.rating = 4.5 THEN 1 ELSE 0 END) AS count_4_5,
-                    SUM(CASE WHEN r.rating = 5.0 THEN 1 ELSE 0 END) AS count_5_0
-                FROM ratings r
-                JOIN cohort_members cm ON cm.user_id = r.user_id
-                WHERE cm.cohort_id = :cohort_id
-                  AND r.film_id = fr.film_id
-                  AND r.rating IS NOT NULL
-            ) AS hist ON TRUE
             LEFT JOIN LATERAL (
                 SELECT array_remove(array_agg(g.name ORDER BY g.name), NULL) AS genres
                 FROM film_genres fg

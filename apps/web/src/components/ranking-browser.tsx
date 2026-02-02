@@ -123,12 +123,22 @@ export function RankingBrowser({
   const selectedSortOption =
     RANKING_SORT_OPTIONS.find((option) => option.value === sortValue) ?? DEFAULT_RANKING_SORT;
 
+  const activeDistribution = syncedSearchParams.get("distribution") ?? "";
+
+  const filteredItems = useMemo(() => {
+    if (!activeDistribution) {
+      return items;
+    }
+    return items.filter((item) => item.distribution_label === activeDistribution);
+  }, [activeDistribution, items]);
+
+  const filteredTotal = filteredItems.length;
   const sortedItems = useMemo(
-    () => sortItems(items, selectedSortOption),
-    [items, selectedSortOption],
+    () => sortItems(filteredItems, selectedSortOption),
+    [filteredItems, selectedSortOption],
   );
 
-  const totalPages = Math.max(1, Math.ceil(Math.max(sortedItems.length, 1) / pageSize));
+  const totalPages = Math.max(1, Math.ceil(Math.max(filteredTotal, 1) / pageSize));
 
   useEffect(() => {
     setPage((current) => {
@@ -221,7 +231,7 @@ export function RankingBrowser({
         placement="top"
         page={page}
         totalPages={totalPages}
-        totalItems={totalItems}
+        totalItems={filteredTotal}
         pageSize={pageSize}
         resultLimit={resultLimit}
         sortValue={selectedSortOption.value}
@@ -344,7 +354,7 @@ export function RankingBrowser({
       <PaginationControls
         page={page}
         totalPages={totalPages}
-        totalItems={totalItems}
+        totalItems={filteredTotal}
         pageSize={pageSize}
         resultLimit={resultLimit}
         sortValue={selectedSortOption.value}

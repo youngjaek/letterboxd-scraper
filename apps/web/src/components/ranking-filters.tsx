@@ -2,7 +2,7 @@
 
 import { FormEvent, useCallback, useEffect, useMemo, useRef, useState, useTransition } from "react";
 import { usePathname, useRouter } from "next/navigation";
-import { useSyncedSearchParams } from "./search-params-provider";
+import { useSearchParamsUpdater, useSyncedSearchParams } from "./search-params-provider";
 import { getApiBase } from "@/lib/api-base";
 
 type Option = {
@@ -403,24 +403,33 @@ function DistributionFilter() {
   const router = useRouter();
   const pathname = usePathname();
   const selectedValue = searchParams.get("distribution") ?? "";
-  const [isPending, startTransition] = useTransition();
+  const [pendingValue, setPendingValue] = useState<string | null>(null);
+  const updateParams = useSearchParamsUpdater();
 
   const handleChange = useCallback(
     (value: string) => {
-      const params = new URLSearchParams(searchParams.toString());
-      if (value) {
-        params.set("distribution", value);
-      } else {
-        params.delete("distribution");
-      }
-      params.delete("page");
-      const query = params.toString();
-      startTransition(() => {
-        router.push(query ? `${pathname}?${query}` : pathname, { scroll: false });
-      });
+      setPendingValue(value);
+      let nextQuery = "";
+      updateParams(
+        (params) => {
+          if (value) {
+            params.set("distribution", value);
+          } else {
+            params.delete("distribution");
+          }
+          params.delete("page");
+          nextQuery = params.toString();
+        },
+        { updateHistory: false },
+      );
+      router.push(nextQuery ? `${pathname}?${nextQuery}` : pathname, { scroll: false });
     },
-    [pathname, router, searchParams],
+    [pathname, router, updateParams],
   );
+
+  useEffect(() => {
+    setPendingValue(null);
+  }, [selectedValue]);
 
   return (
     <div className="flex flex-col gap-2">
@@ -431,9 +440,8 @@ function DistributionFilter() {
         <span>Filter by cluster</span>
         <select
           className="w-48 rounded border border-white/10 bg-black/40 px-3 py-2 text-sm text-white focus:border-brand-primary focus:outline-none"
-          value={selectedValue}
+          value={pendingValue ?? selectedValue}
           onChange={(event) => handleChange(event.target.value)}
-          disabled={isPending}
         >
           <option value="">Any distribution</option>
           {distributionOptions.map((option) => (

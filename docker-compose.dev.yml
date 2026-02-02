@@ -41,9 +41,10 @@ services:
       - redis
 
   web:
+    profiles: ["web-container"]
     image: node:20
     working_dir: /app/apps/web
-    command: bash -lc "npm install && npm run dev -- --hostname 0.0.0.0 --port 3000"
+    command: bash -lc "npm run dev -- --hostname 0.0.0.0 --port 3000"
     env_file:
       - apps/web/.env.local
     environment:
