@@ -13,8 +13,34 @@ type Option = {
 
 const apiBase = getApiBase();
 const distributionOptions: Option[] = [
-  { value: "five-star-dominant", label: "5★ Dominant", hint: "40%+ 5★, clear lead" },
+  { value: "masterpiece-consensus", label: "Universal acclaim", hint: "40%+ at 5★, almost no lows" },
+  { value: "strong-favorite", label: "Certified favorite", hint: "Most ratings ≥3½★, little negativity" },
+  { value: "cult-darling", label: "Cult darling", hint: "Loved by fans, noticeable detractors" },
+  { value: "steady-crowdpleaser", label: "Steady crowdpleaser", hint: "Tidy peak centered on 3★" },
+  { value: "even-split", label: "Even split", hint: "Balanced bell curve" },
+  { value: "wildcard", label: "Balanced chaos", hint: "Even spread across every rating" },
+  { value: "consensus-bomb", label: "Consensus bomb", hint: "Tightly clustered at ½–1★" },
+  { value: "general-dislike", label: "General dislike", hint: "Majority ≤3★ with small high tail" },
+  { value: "love-it-or-hate-it", label: "Polarizing trainwreck", hint: "Huge low spike plus vocal fans" },
+  { value: "unclassified", label: "Unclassified", hint: "Doesn’t fit any pattern" },
 ];
+
+function DistributionSummary({ selectedValue }: { selectedValue: string }) {
+  const active = distributionOptions.find((option) => option.value === selectedValue);
+  if (!active) {
+    return (
+      <p className="text-[0.65rem] text-slate-500">
+        Quickly narrow results by the overall histogram shape.
+      </p>
+    );
+  }
+  return (
+    <div className="flex flex-col gap-1 rounded border border-white/10 bg-black/30 px-3 py-2 text-[0.65rem] text-slate-200 sm:min-w-[13rem]">
+      <span className="font-semibold text-white">{active.label}</span>
+      {active.hint ? <span className="text-slate-400">{active.hint}</span> : null}
+    </div>
+  );
+}
 
 function useSelectedOptions(
   values: string[],
@@ -438,18 +464,21 @@ function DistributionFilter() {
       </span>
       <label className="flex flex-col gap-1 text-xs text-slate-400">
         <span>Filter by cluster</span>
-        <select
-          className="w-48 rounded border border-white/10 bg-black/40 px-3 py-2 text-sm text-white focus:border-brand-primary focus:outline-none"
-          value={pendingValue ?? selectedValue}
-          onChange={(event) => handleChange(event.target.value)}
-        >
-          <option value="">Any distribution</option>
-          {distributionOptions.map((option) => (
-            <option key={option.value} value={option.value}>
-              {option.label}
-            </option>
-          ))}
-        </select>
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:gap-4">
+          <select
+            className="w-full rounded border border-white/10 bg-black/40 px-3 py-2 text-sm text-white focus:border-brand-primary focus:outline-none sm:w-48"
+            value={pendingValue ?? selectedValue}
+            onChange={(event) => handleChange(event.target.value)}
+          >
+            <option value="">Any distribution</option>
+            {distributionOptions.map((option) => (
+              <option key={option.value} value={option.value}>
+                {option.label}
+              </option>
+            ))}
+          </select>
+          <DistributionSummary selectedValue={pendingValue ?? selectedValue} />
+        </div>
       </label>
     </div>
   );

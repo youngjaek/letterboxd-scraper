@@ -32,8 +32,16 @@ router = APIRouter(prefix="/cohorts", tags=["cohorts"])
 
 DISTRIBUTION_LABELS = [
     "unknown",
-    "five-star-dominant",
-    "mixed",
+    "masterpiece-consensus",
+    "strong-favorite",
+    "cult-darling",
+    "steady-crowdpleaser",
+    "even-split",
+    "wildcard",
+    "consensus-bomb",
+    "general-dislike",
+    "love-it-or-hate-it",
+    "unclassified",
 ]
 
 RESULT_LIMIT_OPTIONS = [100, 250, 500, 1000]
@@ -155,32 +163,7 @@ def _fetch_collection_entries(scraper: PosterListingScraper, source_url: str) ->
     return collected
 
 
-DISTRIBUTION_LABEL_SQL = """
-CASE
-    WHEN COALESCE(stats.watchers, 0) > 0
-        AND (
-            COALESCE(stats.count_rating_5_0, 0)::float / NULLIF(stats.watchers::float, 0)
-        ) >= 0.4
-        AND (
-            GREATEST(
-                COALESCE(stats.count_rating_4_5, 0),
-                COALESCE(stats.count_rating_4_0, 0),
-                COALESCE(stats.count_rating_3_5, 0),
-                COALESCE(stats.count_rating_3_0, 0),
-                COALESCE(stats.count_rating_2_5, 0),
-                COALESCE(stats.count_rating_2_0, 0),
-                COALESCE(stats.count_rating_1_5, 0),
-                COALESCE(stats.count_rating_1_0, 0),
-                COALESCE(stats.count_rating_0_5, 0)
-            )::float / NULLIF(stats.watchers::float, 0)
-        ) <= (
-            COALESCE(stats.count_rating_5_0, 0)::float / NULLIF(stats.watchers::float, 0)
-        ) / 2
-    THEN 'five-star-dominant'
-    WHEN COALESCE(stats.watchers, 0) <= 0 THEN 'unknown'
-    ELSE 'mixed'
-END
-""".strip()
+DISTRIBUTION_LABEL_SQL = "COALESCE(stats.distribution_label, 'unclassified')"
 
 
 @router.get("/", response_model=List[CohortSummary], summary="List cohorts")
