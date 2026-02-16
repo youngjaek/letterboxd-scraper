@@ -78,3 +78,14 @@ Films are assigned to the first bucket whose conditions they satisfy. Anything t
 ## Reference Image
 
 The mock alignment charts live at `logs/distribution-charts.jpeg` to keep them out of git history while still accessible locally.
+
+## Inspecting Individual Films
+
+To fetch the full metadata for a single film (watchers, histogram counts, and the assigned bucket) run:
+
+```
+python scripts/inspect_distribution.py --cohort 8 --slug pulse-2001 [--query "&decade=2000"]
+```
+
+The script reads `NEXT_PUBLIC_API_BASE_URL` and `NEXT_PUBLIC_API_KEY` from your environment (matching `.env.local`).
+```
