@@ -75,7 +75,7 @@ Each command respects configuration passed via `.env`, environment variables, or
 
 2. **Configure database & environment**
    - Copy `.env.example` to `.env`, set `DATABASE_URL`.
-   - Apply schema (`psql -f db/schema.sql` or migration tool).
+   - Apply schema (`alembic upgrade head` or, for legacy setups, `psql -f db/schema.sql`). See `docs/migrations.md` for details.
 
 3. **Run CLI workflow**
    ```bash
