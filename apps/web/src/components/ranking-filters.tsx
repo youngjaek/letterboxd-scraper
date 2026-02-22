@@ -14,14 +14,6 @@ type Option = {
 const apiBase = getApiBase();
 const distributionOptions: Option[] = [
   { value: "masterpiece-consensus", label: "Universal acclaim", hint: "40%+ at 5★, almost no lows" },
-  { value: "strong-favorite", label: "Certified favorite", hint: "Most ratings ≥3½★, little negativity" },
-  { value: "cult-darling", label: "Cult darling", hint: "Loved by fans, noticeable detractors" },
-  { value: "steady-crowdpleaser", label: "Steady crowdpleaser", hint: "Tidy peak centered on 3★" },
-  { value: "even-split", label: "Even split", hint: "Balanced bell curve" },
-  { value: "wildcard", label: "Balanced chaos", hint: "Even spread across every rating" },
-  { value: "consensus-bomb", label: "Consensus bomb", hint: "Tightly clustered at ½–1★" },
-  { value: "general-dislike", label: "General dislike", hint: "Majority ≤3★ with small high tail" },
-  { value: "love-it-or-hate-it", label: "Polarizing trainwreck", hint: "Huge low spike plus vocal fans" },
   { value: "unclassified", label: "Unclassified", hint: "Doesn’t fit any pattern" },
 ];
 

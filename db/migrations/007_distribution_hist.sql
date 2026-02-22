@@ -45,163 +45,18 @@ SELECT
         WHEN aggregated.watchers > 0 AND (
             aggregated.count_rating_5_0::float / NULLIF(aggregated.watchers::float, 0)
         ) >= 0.40
-        AND (
-            GREATEST(
-                aggregated.count_rating_4_5,
-                aggregated.count_rating_4_0,
-                aggregated.count_rating_3_5,
-                aggregated.count_rating_3_0,
-                aggregated.count_rating_2_5,
-                aggregated.count_rating_2_0,
-                aggregated.count_rating_1_5,
-                aggregated.count_rating_1_0,
-                aggregated.count_rating_0_5
-            )::float / NULLIF(aggregated.watchers::float, 0)
-        ) <= (
-            aggregated.count_rating_5_0::float / NULLIF(aggregated.watchers::float, 0)
-        ) / 2
+        AND aggregated.count_rating_5_0 >= 1.2 * GREATEST(
+            aggregated.count_rating_4_5,
+            aggregated.count_rating_4_0,
+            aggregated.count_rating_3_5,
+            aggregated.count_rating_3_0,
+            aggregated.count_rating_2_5,
+            aggregated.count_rating_2_0,
+            aggregated.count_rating_1_5,
+            aggregated.count_rating_1_0,
+            aggregated.count_rating_0_5
+        )
         THEN 'masterpiece-consensus'
-        WHEN aggregated.watchers > 0 AND (
-            (aggregated.count_rating_5_0 + aggregated.count_rating_4_5 + aggregated.count_rating_4_0 + aggregated.count_rating_3_5 + aggregated.count_rating_3_0)::float
-            / NULLIF(aggregated.watchers::float, 0)
-        ) >= 0.70
-        AND (
-            aggregated.count_rating_5_0 + aggregated.count_rating_4_5
-        )::float / NULLIF(aggregated.watchers::float, 0) BETWEEN 0.20 AND 0.40
-        AND (
-            aggregated.count_rating_1_5 + aggregated.count_rating_1_0 + aggregated.count_rating_0_5
-        )::float / NULLIF(aggregated.watchers::float, 0) <= 0.15
-        AND (
-            aggregated.count_rating_3_5 + aggregated.count_rating_3_0
-        ) >= (
-            aggregated.count_rating_2_5 + aggregated.count_rating_2_0
-        )
-        THEN 'strong-favorite'
-        WHEN aggregated.watchers > 0 AND (
-            (aggregated.count_rating_5_0 + aggregated.count_rating_4_5 + aggregated.count_rating_4_0 + aggregated.count_rating_3_5 + aggregated.count_rating_3_0)::float
-            / NULLIF(aggregated.watchers::float, 0)
-        ) >= 0.60
-        AND (
-            aggregated.count_rating_1_5 + aggregated.count_rating_1_0 + aggregated.count_rating_0_5
-        )::float / NULLIF(aggregated.watchers::float, 0) >= 0.10
-        AND (
-            aggregated.count_rating_5_0 + aggregated.count_rating_4_5
-        )::float / NULLIF(aggregated.watchers::float, 0) < 0.35
-        AND (
-            aggregated.count_rating_1_5 + aggregated.count_rating_1_0 + aggregated.count_rating_0_5
-        )::float / NULLIF(aggregated.watchers::float, 0) >= 0.4 * (
-            aggregated.count_rating_5_0 + aggregated.count_rating_4_5
-        )::float / NULLIF(aggregated.watchers::float, 0)
-        THEN 'cult-darling'
-        WHEN aggregated.watchers > 0 AND (
-            (aggregated.count_rating_3_5 + aggregated.count_rating_3_0 + aggregated.count_rating_2_5 + aggregated.count_rating_2_0)::float
-            / NULLIF(aggregated.watchers::float, 0)
-        ) >= 0.75
-        AND ABS(
-            (aggregated.count_rating_3_5 + aggregated.count_rating_3_0)
-            - (aggregated.count_rating_2_5 + aggregated.count_rating_2_0)
-        )::float / NULLIF(aggregated.watchers::float, 0) <= 0.10
-        AND (
-            aggregated.count_rating_5_0 + aggregated.count_rating_4_5 + aggregated.count_rating_4_0
-        )::float / NULLIF(aggregated.watchers::float, 0) <= 0.15
-        AND (
-            aggregated.count_rating_1_5 + aggregated.count_rating_1_0 + aggregated.count_rating_0_5
-        )::float / NULLIF(aggregated.watchers::float, 0) <= 0.15
-        THEN 'steady-crowdpleaser'
-        WHEN aggregated.watchers > 0 AND (
-            (aggregated.count_rating_3_5 + aggregated.count_rating_3_0 + aggregated.count_rating_2_5 + aggregated.count_rating_2_0)::float
-            / NULLIF(aggregated.watchers::float, 0)
-        ) >= 0.60
-        AND (
-            aggregated.count_rating_5_0 + aggregated.count_rating_4_5 + aggregated.count_rating_4_0
-        )::float / NULLIF(aggregated.watchers::float, 0) BETWEEN 0.10 AND 0.20
-        AND (
-            aggregated.count_rating_1_5 + aggregated.count_rating_1_0 + aggregated.count_rating_0_5
-        )::float / NULLIF(aggregated.watchers::float, 0) BETWEEN 0.10 AND 0.20
-        AND ABS(
-            (
-                aggregated.count_rating_5_0 + aggregated.count_rating_4_5 + aggregated.count_rating_4_0
-            ) - (
-                aggregated.count_rating_1_5 + aggregated.count_rating_1_0 + aggregated.count_rating_0_5
-            )
-        )::float / NULLIF(aggregated.watchers::float, 0) <= 0.05
-        THEN 'even-split'
-        WHEN aggregated.watchers > 0 AND (
-            aggregated.count_rating_5_0 + aggregated.count_rating_4_5 + aggregated.count_rating_4_0
-        )::float / NULLIF(aggregated.watchers::float, 0) BETWEEN 0.20 AND 0.40
-        AND (
-            aggregated.count_rating_3_5 + aggregated.count_rating_3_0 + aggregated.count_rating_2_5 + aggregated.count_rating_2_0
-        )::float / NULLIF(aggregated.watchers::float, 0) BETWEEN 0.20 AND 0.40
-        AND (
-            aggregated.count_rating_1_5 + aggregated.count_rating_1_0 + aggregated.count_rating_0_5
-        )::float / NULLIF(aggregated.watchers::float, 0) BETWEEN 0.20 AND 0.40
-        AND (
-            GREATEST(
-                aggregated.count_rating_5_0,
-                aggregated.count_rating_4_5,
-                aggregated.count_rating_4_0,
-                aggregated.count_rating_3_5,
-                aggregated.count_rating_3_0,
-                aggregated.count_rating_2_5,
-                aggregated.count_rating_2_0,
-                aggregated.count_rating_1_5,
-                aggregated.count_rating_1_0,
-                aggregated.count_rating_0_5
-            ) - LEAST(
-                aggregated.count_rating_5_0,
-                aggregated.count_rating_4_5,
-                aggregated.count_rating_4_0,
-                aggregated.count_rating_3_5,
-                aggregated.count_rating_3_0,
-                aggregated.count_rating_2_5,
-                aggregated.count_rating_2_0,
-                aggregated.count_rating_1_5,
-                aggregated.count_rating_1_0,
-                aggregated.count_rating_0_5
-            )
-        )::float / NULLIF(aggregated.watchers::float, 0) <= 0.15
-        THEN 'wildcard'
-        WHEN aggregated.watchers > 0 AND (
-            aggregated.count_rating_1_5 + aggregated.count_rating_1_0 + aggregated.count_rating_0_5
-        )::float / NULLIF(aggregated.watchers::float, 0) >= 0.40
-        AND (
-            aggregated.count_rating_5_0 + aggregated.count_rating_4_5 + aggregated.count_rating_4_0
-        )::float / NULLIF(aggregated.watchers::float, 0) <= 0.10
-        AND (
-            aggregated.count_rating_1_5 + aggregated.count_rating_1_0 + aggregated.count_rating_0_5
-        ) >= 1.6 * GREATEST(
-            aggregated.count_rating_2_5 + aggregated.count_rating_2_0,
-            aggregated.count_rating_3_5 + aggregated.count_rating_3_0,
-            aggregated.count_rating_5_0 + aggregated.count_rating_4_5 + aggregated.count_rating_4_0
-        )
-        THEN 'consensus-bomb'
-        WHEN aggregated.watchers > 0 AND (
-            aggregated.count_rating_1_5 + aggregated.count_rating_1_0 + aggregated.count_rating_0_5 + aggregated.count_rating_2_5 + aggregated.count_rating_2_0
-        )::float / NULLIF(aggregated.watchers::float, 0) >= 0.70
-        AND (
-            aggregated.count_rating_1_5 + aggregated.count_rating_1_0 + aggregated.count_rating_0_5
-        )::float / NULLIF(aggregated.watchers::float, 0) BETWEEN 0.20 AND 0.40
-        AND (
-            aggregated.count_rating_5_0 + aggregated.count_rating_4_5 + aggregated.count_rating_4_0
-        )::float / NULLIF(aggregated.watchers::float, 0) <= 0.20
-        THEN 'general-dislike'
-        WHEN aggregated.watchers > 0 AND (
-            aggregated.count_rating_1_5 + aggregated.count_rating_1_0 + aggregated.count_rating_0_5
-        )::float / NULLIF(aggregated.watchers::float, 0) >= 0.30
-        AND (
-            aggregated.count_rating_5_0 + aggregated.count_rating_4_5
-        )::float / NULLIF(aggregated.watchers::float, 0) >= 0.10
-        AND (
-            aggregated.count_rating_3_5 + aggregated.count_rating_3_0 + aggregated.count_rating_2_5 + aggregated.count_rating_2_0
-        )::float / NULLIF(aggregated.watchers::float, 0) <= 0.40
-        AND LEAST(
-            aggregated.count_rating_1_5 + aggregated.count_rating_1_0 + aggregated.count_rating_0_5,
-            aggregated.count_rating_5_0 + aggregated.count_rating_4_5
-        ) >= 0.25 * GREATEST(
-            aggregated.count_rating_1_5 + aggregated.count_rating_1_0 + aggregated.count_rating_0_5,
-            aggregated.count_rating_5_0 + aggregated.count_rating_4_5
-        )
-        THEN 'love-it-or-hate-it'
         ELSE 'unclassified'
     END AS distribution_label
 FROM aggregated;

@@ -13,67 +13,24 @@ Notation:
 - `LOWEXTREME = P1 + P0_5`
 - `MID = MIDHIGH + MIDLOW`
 
-## Proposed Buckets
-
-Films are assigned to the first bucket whose conditions they satisfy. Anything that fails all of them falls back to `unclassified`.
-
-### Universal Acclaim
+## Masterpiece Consensus (current)
 
 - `HIEXTREME >= 0.40`
 - `LOW <= 0.10`
-- `HIEXTREME >= 1.6 * max(MIDHIGH, MIDLOW, LOW)`
+- `P5 >= 1.2 * max(P4_5, P4, P3_5, P3, P2_5, P2, P1_5, P1, P0_5)`
 
-### Certified Favorite
+## Future Buckets (reference only)
 
-- `HIGH + MIDHIGH >= 0.70`
-- `0.20 <= HIEXTREME <= 0.40`
-- `LOW <= 0.15`
-- `MIDHIGH >= MIDLOW`
+The following thresholds are on hold; we may reintroduce them later:
 
-### Cult Darling
-
-- `HIGH + MIDHIGH >= 0.60`
-- `LOW >= 0.10`
-- `HIEXTREME < 0.35`
-- `LOW >= 0.4 * HIEXTREME`
-
-### Steady Crowdpleaser
-
-- `MID >= 0.75`
-- `abs(MIDHIGH - MIDLOW) <= 0.10`
-- `HIGH <= 0.15`
-- `LOW <= 0.15`
-
-### Even Split
-
-- `MID >= 0.60`
-- `0.10 <= HIGH <= 0.20`
-- `0.10 <= LOW <= 0.20`
-- `abs(HIGH - LOW) <= 0.05`
-
-### Balanced Chaos
-
-- Each of `HIGH`, `MID`, `LOW` lies between `0.20` and `0.40`
-- For any individual bucket `bucket_i`, `max(bucket_i) - min(bucket_i) <= 0.15`
-
-### Consensus Bomb
-
-- `LOWEXTREME >= 0.40`
-- `HIGH <= 0.10`
-- `LOWEXTREME >= 1.6 * max(MIDLOW, MIDHIGH, HIGH)`
-
-### General Dislike
-
-- `LOW + MIDLOW >= 0.70`
-- `0.20 <= LOWEXTREME <= 0.40`
-- `HIGH <= 0.20`
-
-### Polarizing Trainwreck
-
-- `LOWEXTREME >= 0.30`
-- `HIEXTREME >= 0.10`
-- `MID <= 0.40`
-- `min(LOWEXTREME, HIEXTREME) >= 0.25 * max(LOWEXTREME, HIEXTREME)`
+- **Certified Favorite**: `HIGH + MIDHIGH >= 0.70`, `0.20 <= HIEXTREME <= 0.40`, `LOW <= 0.15`, `MIDHIGH >= MIDLOW`
+- **Cult Darling**: `HIGH + MIDHIGH >= 0.60`, `LOW >= 0.10`, `HIEXTREME < 0.35`, `LOW >= 0.4 * HIEXTREME`
+- **Steady Crowdpleaser**: `MID >= 0.75`, `abs(MIDHIGH - MIDLOW) <= 0.10`, `HIGH <= 0.15`, `LOW <= 0.15`
+- **Even Split**: `MID >= 0.60`, `0.10 <= HIGH <= 0.20`, `0.10 <= LOW <= 0.20`, `abs(HIGH - LOW) <= 0.05`
+- **Balanced Chaos**: each of `HIGH`, `MID`, `LOW` between `0.20` and `0.40`, and `max(bucket_i) - min(bucket_i) <= 0.15`
+- **Consensus Bomb**: `LOWEXTREME >= 0.40`, `HIGH <= 0.10`, `LOWEXTREME >= 1.6 * max(MIDLOW, MIDHIGH, HIGH)`
+- **General Dislike**: `LOW + MIDLOW >= 0.70`, `0.20 <= LOWEXTREME <= 0.40`, `HIGH <= 0.20`
+- **Polarizing Trainwreck**: `LOWEXTREME >= 0.30`, `HIEXTREME >= 0.10`, `MID <= 0.40`, `min(LOWEXTREME, HIEXTREME) >= 0.25 * max(LOWEXTREME, HIEXTREME)`
 
 ## Reference Image
 

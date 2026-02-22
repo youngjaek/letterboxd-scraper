@@ -33,14 +33,6 @@ router = APIRouter(prefix="/cohorts", tags=["cohorts"])
 DISTRIBUTION_LABELS = [
     "unknown",
     "masterpiece-consensus",
-    "strong-favorite",
-    "cult-darling",
-    "steady-crowdpleaser",
-    "even-split",
-    "wildcard",
-    "consensus-bomb",
-    "general-dislike",
-    "love-it-or-hate-it",
     "unclassified",
 ]
 
