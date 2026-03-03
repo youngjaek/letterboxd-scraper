@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { getApiBase } from "@/lib/api-base";
+import { isDemoMode } from "@/lib/demo-flags";
 
 const apiBase = getApiBase();
 const apiKey = process.env.NEXT_PUBLIC_API_KEY;
@@ -54,8 +55,12 @@ export function ScrapeProgressPanel({
   initialStatus: ScrapeProgress | null;
 }) {
   const [status, setStatus] = useState<ScrapeProgress | null>(initialStatus);
+  const demoLocked = isDemoMode;
 
   useEffect(() => {
+    if (demoLocked) {
+      return;
+    }
     const interval = setInterval(async () => {
       const next = await fetchStatus(cohortId);
       if (next) {
@@ -63,7 +68,7 @@ export function ScrapeProgressPanel({
       }
     }, 5000);
     return () => clearInterval(interval);
-  }, [cohortId]);
+  }, [cohortId, demoLocked]);
 
   const displayStatus = status?.status ?? "idle";
   const total = status?.total_members ?? 0;
@@ -73,8 +78,9 @@ export function ScrapeProgressPanel({
   const recent = (status?.recent_finished ?? []).slice(0, 5);
   const queued = status?.queued ?? 0;
   const failed = status?.failed ?? 0;
-  const subtitle =
-    displayStatus === "running"
+  const subtitle = demoLocked
+    ? "Demo snapshot · no live scrapes"
+    : displayStatus === "running"
       ? `Scraping ${completed}/${total}`
       : total > 0
         ? `Last run ${displayStatus}`

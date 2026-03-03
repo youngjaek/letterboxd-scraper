@@ -7,6 +7,7 @@ import { RankingBrowser } from "@/components/ranking-browser";
 import { serverApiBase } from "@/lib/api-base";
 import { parsePageSize, parseResultLimit } from "@/lib/ranking-options";
 import { RankingRow } from "@/types/ranking-row";
+import { DemoBanner } from "@/components/demo-banner";
 
 const apiBase = serverApiBase;
 const defaultStrategy = "bayesian";
@@ -179,6 +180,7 @@ export default async function CohortRankingsPage({
   const total = rankingResponse.total ?? rankings.length;
   return (
     <section className="mx-auto flex max-w-4xl flex-col gap-6">
+      <DemoBanner />
       <div className="rounded-xl border border-white/10 bg-white/5 p-6 space-y-3">
         <p className="text-xs uppercase tracking-[0.3em] text-brand-accent">Cohort</p>
         <h1 className="text-3xl font-semibold">{cohort.label}</h1>

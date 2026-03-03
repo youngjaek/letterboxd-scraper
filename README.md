@@ -118,3 +118,14 @@ Letterboxd can reject obvious scraper headers. If any pipeline step crashes with
 - If the target profile only loads when you are logged in, also export `LETTERBOXD_SESSION_COOKIE` with the cookie string copied from your browser (e.g., `lb_session=<value>`). The scraper will send those cookies with every request.
 
 Restart the API and the Celery worker so the new header + cookies apply to future requests.
+
+### Read-only demo mode
+
+If you need to showcase the product without touching Letterboxd (e.g., for the Kinoboxd demo), set the following environment variables before starting the stack:
+
+```bash
+export DEMO_MODE=1                # backend/API feature flag
+export NEXT_PUBLIC_DEMO_MODE=1    # Next.js build-time flag
+```
+
+With `DEMO_MODE` enabled, the FastAPI routes reject all write/sync operations and the frontend hides cohort-management controls. Populate the database manually (e.g., with a local scrape or fixture import) and the site will serve those rankings read-only.

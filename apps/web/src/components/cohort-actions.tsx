@@ -3,6 +3,7 @@
 import { useRouter } from "next/navigation";
 import { useState, FormEvent } from "react";
 import { getApiBase } from "@/lib/api-base";
+import { isDemoMode } from "@/lib/demo-flags";
 
 const apiBase = getApiBase();
 const apiKey = process.env.NEXT_PUBLIC_API_KEY;
@@ -28,12 +29,25 @@ type CohortActionsProps = {
 };
 
 export function CohortActions({ cohortId, currentLabel, currentTaskId }: CohortActionsProps) {
+  const demoLocked = isDemoMode;
   const [label, setLabel] = useState(currentLabel);
   const [status, setStatus] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const router = useRouter();
   const isSyncing = Boolean(currentTaskId);
+
+  if (demoLocked) {
+    return (
+      <div className="space-y-4 rounded-xl border border-white/10 bg-white/5 p-5 text-sm text-slate-300">
+        <h3 className="text-lg font-semibold text-brand-primary">Manage Cohort</h3>
+        <p>
+          Demo visitors can explore rankings, but sync controls stay disabled until Kinoboxd receives official
+          Letterboxd API access.
+        </p>
+      </div>
+    );
+  }
 
   async function handleRename(event: FormEvent) {
     event.preventDefault();

@@ -36,3 +36,6 @@ default_queue = "default"
 scrape_queue = "scrape"
 stats_queue = "stats"
 enrichment_queue = "enrichment"
+
+[app]
+demo_mode = false

@@ -27,6 +27,9 @@ We are shifting from a scraper-driven private tool to a **static-data product de
 ### 2. Add Demo Mode
 
 - Introduce a `DEMO_MODE` flag shared by FastAPI + Next.js.
+- Environment variables:
+  - `DEMO_MODE=1` → backend/API enforces read-only behavior.
+  - `NEXT_PUBLIC_DEMO_MODE=1` (or `DEMO_MODE=1` at build time) → frontend hides management controls + shows demo banners.
 - When enabled:
   - Disable or hide any endpoint that kicks off scrapes, enrichment, or destructive actions (`/cohorts/{id}/sync`, `/sync/stop`, DELETEs, etc.). Either remove the routes entirely or guard them behind an internal admin token that never reaches the public build.
   - Strip “Sync now,” “Stop,” and “Delete” actions from the UI (replace with explanatory copy).

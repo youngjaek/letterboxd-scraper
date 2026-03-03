@@ -69,6 +69,11 @@ class TaskQueueSettings:
 
 
 @dataclass
+class AppSettings:
+    demo_mode: bool = False
+
+
+@dataclass
 class Settings:
     database: DatabaseSettings
     scraper: ScraperSettings
@@ -77,6 +82,7 @@ class Settings:
     cohort_defaults: CohortDefaults
     raw: Dict[str, Any] = field(default_factory=dict)
     task_queue: TaskQueueSettings = field(default_factory=TaskQueueSettings)
+    app: AppSettings = field(default_factory=AppSettings)
 
     def as_dict(self) -> Dict[str, Any]:
         return {
@@ -85,6 +91,7 @@ class Settings:
             "rss": self.rss.__dict__,
             "cohort_defaults": self.cohort_defaults.__dict__,
             "task_queue": self.task_queue.__dict__,
+            "app": self.app.__dict__,
         }
 
 
@@ -109,6 +116,7 @@ def load_settings(config_path: Optional[Path] = None) -> Settings:
     rss_cfg = data.get("rss", {})
     tmdb_cfg = data.get("tmdb", {})
     cohort_cfg = data.get("cohort_defaults", {})
+    app_cfg = data.get("app", {})
     task_queue_cfg = data.get("task_queue", {})
 
     db_settings = DatabaseSettings(
@@ -174,6 +182,10 @@ def load_settings(config_path: Optional[Path] = None) -> Settings:
         ),
     )
 
+    app_settings = AppSettings(
+        demo_mode=bool_from_env("DEMO_MODE", app_cfg.get("demo_mode", False)),
+    )
+
     return Settings(
         database=db_settings,
         scraper=scraper_settings,
@@ -182,6 +194,7 @@ def load_settings(config_path: Optional[Path] = None) -> Settings:
         cohort_defaults=cohort_settings,
         task_queue=task_queue_settings,
         raw=data,
+        app=app_settings,
     )
 
 

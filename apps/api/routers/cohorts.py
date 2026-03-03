@@ -49,6 +49,11 @@ DEFAULT_SORT_ORDER = "desc"
 SORT_ORDER_VALUES = {"asc", "desc"}
 
 
+def _ensure_not_demo_mode(settings: config.Settings) -> None:
+    if settings.app.demo_mode:
+        raise HTTPException(status_code=403, detail="This action is disabled in demo mode.")
+
+
 def _extract_letterboxd_film_ids(
     source_url: str,
     session: Session,
@@ -303,6 +308,7 @@ def create_cohort(
     settings: config.Settings = Depends(get_settings),
     user: models.User = Depends(require_api_user),
 ) -> CohortDetail:
+    _ensure_not_demo_mode(settings)
     definition = {
         "depth": payload.depth or settings.cohort_defaults.follow_depth,
         "include_seed": (
@@ -599,8 +605,10 @@ def trigger_cohort_sync(
     cohort_id: int,
     incremental: bool = True,
     session: Session = Depends(get_db_session),
+    settings: config.Settings = Depends(get_settings),
     user: models.User = Depends(require_api_user),
 ) -> dict:
+    _ensure_not_demo_mode(settings)
     cohort = session.get(models.Cohort, cohort_id)
     if not cohort:
         raise HTTPException(status_code=404, detail="Cohort not found")
@@ -616,8 +624,10 @@ def trigger_cohort_sync(
 def stop_cohort_sync(
     cohort_id: int,
     session: Session = Depends(get_db_session),
+    settings: config.Settings = Depends(get_settings),
     user: models.User = Depends(require_api_user),
 ) -> dict:
+    _ensure_not_demo_mode(settings)
     cohort = session.get(models.Cohort, cohort_id)
     if not cohort:
         raise HTTPException(status_code=404, detail="Cohort not found")
@@ -635,8 +645,10 @@ def rename_cohort(
     cohort_id: int,
     label: str,
     session: Session = Depends(get_db_session),
+    settings: config.Settings = Depends(get_settings),
     user: models.User = Depends(require_api_user),
 ) -> CohortDetail:
+    _ensure_not_demo_mode(settings)
     cohort = services.cohorts.rename_cohort(session, cohort_id, label)
     if not cohort:
         raise HTTPException(status_code=404, detail="Cohort not found")
@@ -647,8 +659,11 @@ def rename_cohort(
 def delete_cohort(
     cohort_id: int,
     session: Session = Depends(get_db_session),
+    settings: config.Settings = Depends(get_settings),
     user: models.User = Depends(require_api_user),
 ) -> None:
+    _ensure_not_demo_mode(settings)
     deleted = services.cohorts.delete_cohort(session, cohort_id)
     if not deleted:
         raise HTTPException(status_code=404, detail="Cohort not found")
+D

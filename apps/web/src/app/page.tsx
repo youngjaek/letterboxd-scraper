@@ -1,6 +1,7 @@
 import { CreateCohortForm } from "@/components/create-cohort-form";
 import Link from "next/link";
 import { serverApiBase } from "@/lib/api-base";
+import { DemoBanner } from "@/components/demo-banner";
 
 const apiBase = serverApiBase;
 
@@ -57,6 +58,7 @@ export default async function Home() {
   const rankings = rankingResponse.items;
   return (
     <section className="mx-auto flex max-w-5xl flex-col gap-10">
+      <DemoBanner />
       <header className="space-y-4">
         <p className="text-sm uppercase tracking-[0.3em] text-brand-accent">Phase 3</p>
         <h1 className="text-4xl font-semibold">Letterboxd Cohort Control Room</h1>
