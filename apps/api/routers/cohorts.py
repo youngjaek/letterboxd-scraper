@@ -666,4 +666,3 @@ def delete_cohort(
     deleted = services.cohorts.delete_cohort(session, cohort_id)
     if not deleted:
         raise HTTPException(status_code=404, detail="Cohort not found")
-D
