@@ -8,6 +8,8 @@ import { serverApiBase } from "@/lib/api-base";
 import { parsePageSize, parseResultLimit } from "@/lib/ranking-options";
 import { RankingRow } from "@/types/ranking-row";
 import { DemoBanner } from "@/components/demo-banner";
+import { cacheResult } from "@/lib/server-cache";
+import { isDemoMode } from "@/lib/demo-flags";
 
 const apiBase = serverApiBase;
 const defaultStrategy = "bayesian";
@@ -46,12 +48,21 @@ type ScrapeProgress = {
   recent_finished: ScrapeMemberStatus[];
 };
 
+const shouldCacheApi = isDemoMode;
+const DEMO_CACHE_TTL_MS = 30_000;
+
 async function fetchCohort(id: string): Promise<CohortDetail | null> {
-  const res = await fetch(`${apiBase}/cohorts/${id}`, { cache: "no-store" });
-  if (!res.ok) {
-    return null;
+  const request = async () => {
+    const res = await fetch(`${apiBase}/cohorts/${id}`, { cache: "no-store" });
+    if (!res.ok) {
+      return null;
+    }
+    return res.json();
+  };
+  if (!shouldCacheApi) {
+    return request();
   }
-  return res.json();
+  return cacheResult(`cohort:${id}`, DEMO_CACHE_TTL_MS, request);
 }
 
 function getParamValues(value: string | string[] | undefined): string[] {
@@ -127,19 +138,31 @@ async function fetchRankings(
     }
   });
   const url = `${apiBase}/cohorts/${id}/rankings?${query.toString()}`;
-  const res = await fetch(url, { cache: "no-store" });
-  if (!res.ok) {
-    return { items: [], total: 0 };
+  const request = async () => {
+    const res = await fetch(url, { cache: "no-store" });
+    if (!res.ok) {
+      return { items: [], total: 0 };
+    }
+    return res.json();
+  };
+  if (!shouldCacheApi) {
+    return request();
   }
-  return res.json();
+  return cacheResult(`cohort:${id}:rankings:${query.toString()}`, DEMO_CACHE_TTL_MS, request);
 }
 
 async function fetchScrapeStatus(id: string): Promise<ScrapeProgress | null> {
-  const res = await fetch(`${apiBase}/cohorts/${id}/scrape-status`, { cache: "no-store" });
-  if (!res.ok) {
-    return null;
+  const request = async () => {
+    const res = await fetch(`${apiBase}/cohorts/${id}/scrape-status`, { cache: "no-store" });
+    if (!res.ok) {
+      return null;
+    }
+    return res.json();
+  };
+  if (!shouldCacheApi) {
+    return request();
   }
-  return res.json();
+  return cacheResult(`cohort:${id}:scrape-status`, DEMO_CACHE_TTL_MS, request);
 }
 
 export default async function CohortRankingsPage({
@@ -161,6 +184,8 @@ export default async function CohortRankingsPage({
     ? searchParams?.sort_order[0]
     : searchParams?.sort_order;
   const initialQueryString = serializeSearchParamsForProvider(searchParams);
+  const rankingsPromise = fetchRankings(routeParams.id, strategy, searchParams, selectedResultLimit);
+  const scrapeStatusPromise = fetchScrapeStatus(routeParams.id);
   const cohort = await fetchCohort(routeParams.id);
   if (!cohort) {
     return (
@@ -172,10 +197,7 @@ export default async function CohortRankingsPage({
       </section>
     );
   }
-  const [rankingResponse, scrapeStatus] = await Promise.all([
-    fetchRankings(routeParams.id, strategy, searchParams, selectedResultLimit),
-    fetchScrapeStatus(routeParams.id),
-  ]);
+  const [rankingResponse, scrapeStatus] = await Promise.all([rankingsPromise, scrapeStatusPromise]);
   const rankings: RankingRow[] = rankingResponse.items ?? [];
   const total = rankingResponse.total ?? rankings.length;
   return (

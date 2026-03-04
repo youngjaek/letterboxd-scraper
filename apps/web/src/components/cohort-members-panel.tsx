@@ -1,5 +1,6 @@
 "use client";
 
+import Image from "next/image";
 import Link from "next/link";
 import { useMemo, useState } from "react";
 
@@ -72,11 +73,14 @@ export function CohortMembersPanel({ members }: { members: MemberProfile[] }) {
                 className="flex items-center gap-3 rounded-xl border border-white/5 bg-white/5 px-3 py-2 shadow-sm shadow-black/20"
               >
                 {member.avatar_url ? (
-                  <img
+                  <Image
                     src={member.avatar_url}
                     alt={member.username}
+                    width={32}
+                    height={32}
                     className="h-8 w-8 rounded-full object-cover"
                     loading="lazy"
+                    unoptimized
                   />
                 ) : (
                   <div className="h-8 w-8 rounded-full bg-white/10 text-center text-[0.65rem] leading-8 text-white/70">

@@ -3,14 +3,14 @@
 import { useState } from "react";
 import { CohortActions } from "./cohort-actions";
 import { CohortMembersPanel } from "./cohort-members-panel";
-import { ScrapeProgressPanel } from "./scrape-progress-panel";
+import { ScrapeProgressPanel, type ScrapeProgress } from "./scrape-progress-panel";
 
 type ManagePanelProps = {
   cohortId: number;
   label: string;
   currentTaskId?: string | null;
   members: Array<{ username: string; avatar_url: string | null }>;
-  scrapeStatus: any;
+  scrapeStatus: ScrapeProgress | null;
 };
 
 export function ManageCohortPanel({

@@ -7,7 +7,7 @@ import { isDemoMode } from "@/lib/demo-flags";
 const apiBase = getApiBase();
 const apiKey = process.env.NEXT_PUBLIC_API_KEY;
 
-type ScrapeMemberStatus = {
+export type ScrapeMemberStatus = {
   username: string;
   status: string;
   mode: string;
@@ -16,7 +16,7 @@ type ScrapeMemberStatus = {
   error?: string | null;
 };
 
-type ScrapeProgress = {
+export type ScrapeProgress = {
   status: string;
   run_id: number | null;
   run_type: string | null;

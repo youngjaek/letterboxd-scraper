@@ -1,6 +1,6 @@
 "use client";
 
-import { FormEvent, useCallback, useEffect, useMemo, useRef, useState, useTransition } from "react";
+import { FormEvent, useCallback, useEffect, useMemo, useState, useTransition } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import { useSearchParamsUpdater, useSyncedSearchParams } from "./search-params-provider";
 import { getApiBase } from "@/lib/api-base";
@@ -10,6 +10,11 @@ type Option = {
   label: string;
   hint?: string | null;
 };
+
+type GenreSearchResult = { id: number; name: string };
+type CountrySearchResult = { code: string; name?: string | null };
+type DirectorSearchResult = { id: number; name: string };
+type MapResponseFn<T> = (item: T) => Option;
 
 const apiBase = getApiBase();
 const distributionOptions: Option[] = [
@@ -34,23 +39,28 @@ function DistributionSummary({ selectedValue }: { selectedValue: string }) {
   );
 }
 
-function useSelectedOptions(
+function useSelectedOptions<T>(
   values: string[],
   endpoint: string,
   idParam: string,
-  mapResponse: (item: any) => Option,
+  mapResponse: MapResponseFn<T>,
 ) {
   const [options, setOptions] = useState<Option[]>([]);
+  const valueSignature = values.join("|");
   useEffect(() => {
-    if (!values.length) {
+    if (!valueSignature) {
       setOptions([]);
       return;
     }
     const controller = new AbortController();
     const url = new URL(`${apiBase}${endpoint}`);
-    values.forEach((value) => url.searchParams.append(idParam, value));
+    valueSignature.split("|").forEach((value) => {
+      if (value) {
+        url.searchParams.append(idParam, value);
+      }
+    });
     fetch(url.toString(), { signal: controller.signal })
-      .then((res) => (res.ok ? res.json() : []))
+      .then(async (res) => (res.ok ? ((await res.json()) as T[]) : []))
       .then((data) => setOptions((data || []).map(mapResponse)))
       .catch(() => {
         if (!controller.signal.aborted) {
@@ -58,25 +68,27 @@ function useSelectedOptions(
         }
       });
     return () => controller.abort();
-  }, [values.join(","), endpoint, idParam, mapResponse]);
+  }, [valueSignature, endpoint, idParam, mapResponse]);
   return options;
 }
 
-function MultiSelectFilter({
+type MultiSelectFilterProps<T> = {
+  label: string;
+  placeholder: string;
+  endpoint: string;
+  paramKey: string;
+  idParam: string;
+  mapResponse: MapResponseFn<T>;
+};
+
+function MultiSelectFilter<T>({
   label,
   placeholder,
   endpoint,
   paramKey,
   idParam,
   mapResponse,
-}: {
-  label: string;
-  placeholder: string;
-  endpoint: string;
-  paramKey: string;
-  idParam: string;
-  mapResponse: (item: any) => Option;
-}) {
+}: MultiSelectFilterProps<T>) {
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSyncedSearchParams();
@@ -85,7 +97,7 @@ function MultiSelectFilter({
   const [showSuggestions, setShowSuggestions] = useState(false);
   const [highlightedIndex, setHighlightedIndex] = useState(-1);
   const selectedValues = useMemo(() => searchParams.getAll(paramKey), [searchParams, paramKey]);
-  const selectedOptions = useSelectedOptions(selectedValues, endpoint, idParam, mapResponse);
+  const selectedOptions = useSelectedOptions<T>(selectedValues, endpoint, idParam, mapResponse);
 
   useEffect(() => {
     if (!query || query.trim().length < 2) {
@@ -656,12 +668,18 @@ export function RankingFilters() {
     "letterboxd_source",
   ];
   const hasFilters = filterKeys.some((key) => searchParams.getAll(key).length > 0);
-  const mapGenre = useCallback((item: any) => ({ value: String(item.id), label: item.name }), []);
-  const mapCountry = useCallback(
-    (item: any) => ({ value: item.code, label: item.name ?? item.code }),
+  const mapGenre = useCallback<MapResponseFn<GenreSearchResult>>(
+    (item) => ({ value: String(item.id), label: item.name }),
     [],
   );
-  const mapDirector = useCallback((item: any) => ({ value: String(item.id), label: item.name }), []);
+  const mapCountry = useCallback<MapResponseFn<CountrySearchResult>>(
+    (item) => ({ value: item.code, label: item.name ?? item.code }),
+    [],
+  );
+  const mapDirector = useCallback<MapResponseFn<DirectorSearchResult>>(
+    (item) => ({ value: String(item.id), label: item.name }),
+    [],
+  );
 
   function clearFilters() {
     const params = new URLSearchParams(searchParams.toString());
@@ -675,7 +693,7 @@ export function RankingFilters() {
     <div className="border-b border-white/10 px-6 py-4">
       <div className="flex flex-col gap-4">
         <div className="flex flex-col gap-4 lg:flex-row">
-          <MultiSelectFilter
+          <MultiSelectFilter<GenreSearchResult>
             label="Genres"
             placeholder="Search genres"
             endpoint="/filters/genres"
@@ -683,7 +701,7 @@ export function RankingFilters() {
             idParam="ids"
             mapResponse={mapGenre}
           />
-          <MultiSelectFilter
+          <MultiSelectFilter<CountrySearchResult>
             label="Countries"
             placeholder="Search countries"
             endpoint="/filters/countries"
@@ -691,7 +709,7 @@ export function RankingFilters() {
             idParam="codes"
             mapResponse={mapCountry}
           />
-          <MultiSelectFilter
+          <MultiSelectFilter<DirectorSearchResult>
             label="Directors"
             placeholder="Search directors"
             endpoint="/filters/directors"

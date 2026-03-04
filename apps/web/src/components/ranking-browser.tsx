@@ -1,5 +1,6 @@
 "use client";
 
+import Image from "next/image";
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
@@ -139,6 +140,7 @@ export function RankingBrowser({
   );
 
   const totalPages = Math.max(1, Math.ceil(Math.max(filteredTotal, 1) / pageSize));
+  const totalMatchingItems = activeDistribution ? filteredTotal : totalItems;
 
   useEffect(() => {
     setPage((current) => {
@@ -231,7 +233,7 @@ export function RankingBrowser({
         placement="top"
         page={page}
         totalPages={totalPages}
-        totalItems={filteredTotal}
+        totalItems={totalMatchingItems}
         pageSize={pageSize}
         resultLimit={resultLimit}
         sortValue={selectedSortOption.value}
@@ -257,11 +259,14 @@ export function RankingBrowser({
                   <div className="max-w-[120px]">
                     <div className="overflow-hidden rounded-lg border border-white/10 bg-black/20">
                       {item.poster_url ? (
-                        <img
+                        <Image
                           src={item.poster_url}
                           alt={`${item.title} poster`}
+                          width={240}
+                          height={360}
                           className="h-full w-full object-cover"
                           loading="lazy"
+                          unoptimized
                         />
                       ) : (
                         <div className="flex aspect-[2/3] items-center justify-center text-xs text-slate-500">

@@ -2,6 +2,8 @@ import { CreateCohortForm } from "@/components/create-cohort-form";
 import Link from "next/link";
 import { serverApiBase } from "@/lib/api-base";
 import { DemoBanner } from "@/components/demo-banner";
+import { cacheResult } from "@/lib/server-cache";
+import { isDemoMode } from "@/lib/demo-flags";
 
 const apiBase = serverApiBase;
 
@@ -31,24 +33,40 @@ type RankingResponse = {
   total: number;
 };
 
+const shouldCacheApi = isDemoMode;
+const DEMO_CACHE_TTL_MS = 30_000;
+
 async function fetchCohorts(): Promise<CohortSummary[]> {
-  const res = await fetch(`${apiBase}/cohorts`, { cache: "no-store" });
-  if (!res.ok) {
-    console.warn("Failed to load cohorts", res.status, await res.text());
-    return [];
+  const request = async () => {
+    const res = await fetch(`${apiBase}/cohorts`, { cache: "no-store" });
+    if (!res.ok) {
+      console.warn("Failed to load cohorts", res.status, await res.text());
+      return [];
+    }
+    return res.json();
+  };
+  if (!shouldCacheApi) {
+    return request();
   }
-  return res.json();
+  return cacheResult("cohorts:list", DEMO_CACHE_TTL_MS, request);
 }
 
 async function fetchRankings(cohortId: number, limit = 10): Promise<RankingResponse> {
-  const res = await fetch(`${apiBase}/cohorts/${cohortId}/rankings?limit=${limit}`, {
-    cache: "no-store",
-  });
-  if (!res.ok) {
-    console.warn("Failed to load rankings", res.status, await res.text());
-    return { items: [], total: 0 };
+  const request = async () => {
+    const res = await fetch(`${apiBase}/cohorts/${cohortId}/rankings?limit=${limit}`, {
+      cache: "no-store",
+    });
+    if (!res.ok) {
+      console.warn("Failed to load rankings", res.status, await res.text());
+      return { items: [], total: 0 };
+    }
+    return res.json();
+  };
+  if (!shouldCacheApi) {
+    return request();
   }
-  return res.json();
+  const cacheKey = `rankings:home:${cohortId}:limit=${limit}`;
+  return cacheResult(cacheKey, DEMO_CACHE_TTL_MS, request);
 }
 
 export default async function Home() {
