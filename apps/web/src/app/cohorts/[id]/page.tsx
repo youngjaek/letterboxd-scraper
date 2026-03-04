@@ -122,7 +122,7 @@ async function fetchRankings(
   ];
   singleKeys.forEach((key) => {
     const raw = Array.isArray(searchParams?.[key]) ? searchParams?.[key]?.[0] : searchParams?.[key];
-    if (raw) {
+    if (typeof raw === "string" && raw.length > 0) {
       query.set(key, raw);
     }
   });
