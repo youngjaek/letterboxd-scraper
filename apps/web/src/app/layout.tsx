@@ -2,8 +2,8 @@ import type { Metadata } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "Letterboxd Cohort",
-  description: "Private alpha UI for cohort dashboards and rankings",
+  title: "Kinoboxd",
+  description: "Live Letterboxd cohort analytics with rankings, sentiment, and watch data.",
 };
 
 export default function RootLayout({

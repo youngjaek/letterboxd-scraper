@@ -33,6 +33,9 @@ type RankingResponse = {
   total: number;
 };
 
+const DEMO_ALLOWED_HANDLES = ["thebigal", "filipe"];
+const DEMO_BLOCKED_IDS = new Set<number>([5, 6]);
+
 const shouldCacheApi = isDemoMode;
 const DEMO_CACHE_TTL_MS = 30_000;
 
@@ -69,8 +72,19 @@ async function fetchRankings(cohortId: number, limit = 10): Promise<RankingRespo
   return cacheResult(cacheKey, DEMO_CACHE_TTL_MS, request);
 }
 
+function curateDemoCohorts(cohorts: CohortSummary[]): CohortSummary[] {
+  return cohorts.filter((cohort) => {
+    if (DEMO_BLOCKED_IDS.has(cohort.id)) {
+      return false;
+    }
+    const normalizedLabel = cohort.label.toLowerCase();
+    return DEMO_ALLOWED_HANDLES.some((handle) => normalizedLabel.includes(handle));
+  });
+}
+
 export default async function Home() {
-  const cohorts = await fetchCohorts();
+  const allCohorts = await fetchCohorts();
+  const cohorts = isDemoMode ? curateDemoCohorts(allCohorts) : allCohorts;
   const featuredCohort = cohorts[0];
   const rankingResponse = featuredCohort ? await fetchRankings(featuredCohort.id) : { items: [], total: 0 };
   const rankings = rankingResponse.items;
@@ -78,11 +92,10 @@ export default async function Home() {
     <section className="mx-auto flex max-w-5xl flex-col gap-10">
       <DemoBanner />
       <header className="space-y-4">
-        <p className="text-sm uppercase tracking-[0.3em] text-brand-accent">Phase 3</p>
-        <h1 className="text-4xl font-semibold">Letterboxd Cohort Control Room</h1>
+        <p className="text-sm uppercase tracking-[0.3em] text-brand-accent">Live Cohort Briefing</p>
+        <h1 className="text-4xl font-semibold">Kinoboxd</h1>
         <p className="text-base text-slate-300">
-          FastAPI base:
-          <span className="font-mono text-white"> {apiBase}</span>
+          Curated Letterboxd cohorts with fresh rankings, sentiment, and watchers—ready for stakeholders to explore.
         </p>
       </header>
       <div className="grid gap-6 md:grid-cols-[2fr,1fr]">
