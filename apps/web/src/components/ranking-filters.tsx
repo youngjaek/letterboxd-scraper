@@ -22,6 +22,18 @@ const distributionOptions: Option[] = [
   { value: "unclassified", label: "Unclassified", hint: "Doesn’t fit any pattern" },
 ];
 
+function buildApiUrl(endpoint: string): URL {
+  const absoluteBase = apiBase.startsWith("http://") || apiBase.startsWith("https://");
+  if (absoluteBase) {
+    return new URL(`${apiBase}${endpoint}`);
+  }
+  const origin =
+    typeof window !== "undefined" && window.location?.origin
+      ? window.location.origin
+      : "http://127.0.0.1:3000";
+  return new URL(`${apiBase}${endpoint}`, origin);
+}
+
 function DistributionSummary({ selectedValue }: { selectedValue: string }) {
   const active = distributionOptions.find((option) => option.value === selectedValue);
   if (!active) {
@@ -53,7 +65,7 @@ function useSelectedOptions<T>(
       return;
     }
     const controller = new AbortController();
-    const url = new URL(`${apiBase}${endpoint}`);
+    const url = buildApiUrl(endpoint);
     valueSignature.split("|").forEach((value) => {
       if (value) {
         url.searchParams.append(idParam, value);
@@ -105,7 +117,7 @@ function MultiSelectFilter<T>({
       return;
     }
     const controller = new AbortController();
-    const url = new URL(`${apiBase}${endpoint}`);
+    const url = buildApiUrl(endpoint);
     url.searchParams.set("q", query.trim());
     url.searchParams.set("limit", "8");
     fetch(url.toString(), { signal: controller.signal })
