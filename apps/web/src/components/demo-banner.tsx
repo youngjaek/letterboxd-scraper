@@ -16,9 +16,8 @@ export function DemoBanner({ className }: DemoBannerProps) {
     .join(" ");
   return (
     <div className={classes}>
-      Kinoboxd is running in <span className="font-semibold text-yellow-100">demo mode</span>. The rankings and
-      filters showcase Alexy&apos;s private cohort data, and write actions (create/sync/delete) are disabled while we
-      pursue official Letterboxd API access.
+      Kinoboxd is running in <span className="font-semibold text-yellow-100">demo mode</span>. Rankings are read-only
+      and write actions (create/sync/delete) stay disabled in this preview.
     </div>
   );
 }

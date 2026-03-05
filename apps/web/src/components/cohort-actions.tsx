@@ -42,8 +42,7 @@ export function CohortActions({ cohortId, currentLabel, currentTaskId }: CohortA
       <div className="space-y-4 rounded-xl border border-white/10 bg-white/5 p-5 text-sm text-slate-300">
         <h3 className="text-lg font-semibold text-brand-primary">Manage Cohort</h3>
         <p>
-          Demo visitors can explore rankings, but sync controls stay disabled until Kinoboxd receives official
-          Letterboxd API access.
+          Demo visitors can explore rankings, but sync controls stay disabled in this read-only preview.
         </p>
       </div>
     );

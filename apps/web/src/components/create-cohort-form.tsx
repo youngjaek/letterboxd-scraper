@@ -14,9 +14,8 @@ function DemoLockedNotice() {
       <h3 className="text-lg font-semibold text-brand-primary">Create Cohort</h3>
       <p>
         The public Kinoboxd demo is <span className="text-white">read-only</span>. Cohort creation and sync controls
-        stay behind closed doors until Letterboxd approves official API access.
+        are only available on internal environments.
       </p>
-      <p className="text-xs uppercase tracking-[0.3em] text-slate-400">Interested? Join the waitlist to vote for API access.</p>
     </div>
   );
 }
