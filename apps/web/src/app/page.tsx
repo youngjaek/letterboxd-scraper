@@ -92,7 +92,6 @@ export default async function Home() {
     <section className="mx-auto flex max-w-5xl flex-col gap-10">
       <DemoBanner />
       <header className="space-y-4">
-        <p className="text-sm uppercase tracking-[0.3em] text-brand-accent">Live Cohort Briefing</p>
         <h1 className="text-4xl font-semibold">Kinoboxd</h1>
         <p className="text-base text-slate-300">
           Curated Letterboxd cohorts with fresh rankings, sentiment, and watchers—ready for stakeholders to explore.
@@ -155,13 +154,6 @@ export default async function Home() {
           )}
         </div>
       </div>
-      <footer className="text-sm text-slate-400">
-        Backend running? Start everything with
-        <code className="mx-2 rounded bg-black/40 px-2 py-1 text-xs">
-          docker compose -f docker-compose.dev.yml up --build
-        </code>
-        (API on 8000, web on 3000) or point `NEXT_PUBLIC_API_BASE_URL` at a manually started FastAPI server.
-      </footer>
     </section>
   );
 }
