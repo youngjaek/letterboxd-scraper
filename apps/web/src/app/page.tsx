@@ -105,7 +105,7 @@ export default async function Home() {
           </div>
           <div className="rounded-xl border border-white/10 bg-white/5">
             {cohorts.length === 0 ? (
-              <p className="p-6 text-sm text-slate-400">No cohorts found; create one via the CLI or API.</p>
+              <p className="p-6 text-sm text-slate-400">No cohorts are available in this demo right now.</p>
             ) : (
               <ul>
                 {cohorts.map((cohort) => (
