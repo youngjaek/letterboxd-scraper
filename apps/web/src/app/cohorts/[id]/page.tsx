@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { Suspense } from "react";
 import { ManageCohortPanel } from "@/components/manage-cohort-panel";
 import { RankingStrategySelect } from "@/components/ranking-strategy-select";
 import { RankingFilters } from "@/components/ranking-filters";
@@ -184,7 +185,6 @@ export default async function CohortRankingsPage({
     ? searchParams?.sort_order[0]
     : searchParams?.sort_order;
   const initialQueryString = serializeSearchParamsForProvider(searchParams);
-  const rankingsPromise = fetchRankings(routeParams.id, strategy, searchParams, selectedResultLimit);
   const scrapeStatusPromise = fetchScrapeStatus(routeParams.id);
   const cohort = await fetchCohort(routeParams.id);
   if (!cohort) {
@@ -197,9 +197,7 @@ export default async function CohortRankingsPage({
       </section>
     );
   }
-  const [rankingResponse, scrapeStatus] = await Promise.all([rankingsPromise, scrapeStatusPromise]);
-  const rankings: RankingRow[] = rankingResponse.items ?? [];
-  const total = rankingResponse.total ?? rankings.length;
+  const scrapeStatus = await scrapeStatusPromise;
   return (
     <section className="mx-auto flex max-w-4xl flex-col gap-6">
       <DemoBanner />
@@ -225,24 +223,95 @@ export default async function CohortRankingsPage({
         </Link>
       </div>
       <ManageCohortPanel cohortId={cohort.id} label={cohort.label} currentTaskId={cohort.current_task_id} members={cohort.members} scrapeStatus={scrapeStatus} />
-      <SearchParamsProvider initialQueryString={initialQueryString}>
-        <div className="rounded-xl border border-white/10 bg-white/5">
-          <div className="flex items-center justify-between border-b border-white/10 px-6 py-4 text-xs uppercase tracking-[0.2em] text-slate-400">
-            <span>Rankings</span>
-            <RankingStrategySelect cohortId={cohort.id} currentStrategy={strategy} />
-          </div>
-          <RankingFilters />
-          <RankingBrowser
-            items={rankings}
-            totalItems={total}
-            initialPage={currentPage}
-            initialPageSize={selectedPageSize}
-            initialResultLimit={selectedResultLimit}
-            initialSortBy={sortByParam}
-            initialSortOrder={sortOrderParam}
-          />
-        </div>
-      </SearchParamsProvider>
+      <Suspense fallback={<RankingPanelFallback />}>
+        <RankingSection
+          cohortId={cohort.id}
+          routeId={routeParams.id}
+          strategy={strategy}
+          searchParams={searchParams}
+          selectedPageSize={selectedPageSize}
+          selectedResultLimit={selectedResultLimit}
+          currentPage={currentPage}
+          sortByParam={sortByParam}
+          sortOrderParam={sortOrderParam}
+          initialQueryString={initialQueryString}
+        />
+      </Suspense>
     </section>
+  );
+}
+
+type RankingSectionProps = {
+  cohortId: number;
+  routeId: string;
+  strategy: string;
+  searchParams?: Record<string, string | string[] | undefined>;
+  selectedPageSize: number;
+  selectedResultLimit: number;
+  currentPage: number;
+  sortByParam?: string;
+  sortOrderParam?: string;
+  initialQueryString: string;
+};
+
+async function RankingSection({
+  cohortId,
+  routeId,
+  strategy,
+  searchParams,
+  selectedPageSize,
+  selectedResultLimit,
+  currentPage,
+  sortByParam,
+  sortOrderParam,
+  initialQueryString,
+}: RankingSectionProps) {
+  const rankingResponse = await fetchRankings(routeId, strategy, searchParams, selectedResultLimit);
+  const rankings: RankingRow[] = rankingResponse.items ?? [];
+  const total = rankingResponse.total ?? rankings.length;
+  return (
+    <SearchParamsProvider initialQueryString={initialQueryString}>
+      <div className="rounded-xl border border-white/10 bg-white/5">
+        <div className="flex items-center justify-between border-b border-white/10 px-6 py-4 text-xs uppercase tracking-[0.2em] text-slate-400">
+          <span>Rankings</span>
+          <RankingStrategySelect cohortId={cohortId} currentStrategy={strategy} />
+        </div>
+        <RankingFilters />
+        <RankingBrowser
+          items={rankings}
+          totalItems={total}
+          initialPage={currentPage}
+          initialPageSize={selectedPageSize}
+          initialResultLimit={selectedResultLimit}
+          initialSortBy={sortByParam}
+          initialSortOrder={sortOrderParam}
+        />
+      </div>
+    </SearchParamsProvider>
+  );
+}
+
+function RankingPanelFallback() {
+  return (
+    <div className="rounded-xl border border-white/10 bg-white/5 animate-pulse">
+      <div className="flex items-center justify-between border-b border-white/10 px-6 py-4">
+        <div className="h-4 w-24 rounded-full bg-white/10" />
+        <div className="h-8 w-40 rounded-full bg-white/10" />
+      </div>
+      <div className="border-b border-white/10 px-6 py-4">
+        <div className="h-6 w-32 rounded-full bg-white/10" />
+      </div>
+      <div className="space-y-4 px-6 py-6">
+        {Array.from({ length: 4 }).map((_, index) => (
+          <div key={index} className="flex items-center justify-between border-b border-white/10 pb-4 last:border-none last:pb-0">
+            <div className="h-4 w-1/2 rounded-full bg-white/10" />
+            <div className="flex flex-col items-end gap-2">
+              <div className="h-3 w-16 rounded-full bg-white/10" />
+              <div className="h-3 w-24 rounded-full bg-white/10" />
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
   );
 }

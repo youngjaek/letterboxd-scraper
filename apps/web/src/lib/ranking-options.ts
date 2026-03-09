@@ -1,6 +1,6 @@
-export const RESULT_LIMIT_OPTIONS = [100, 250, 500, 1000] as const;
+export const RESULT_LIMIT_OPTIONS = [50, 100, 250, 500, 1000] as const;
 export type ResultLimitOption = (typeof RESULT_LIMIT_OPTIONS)[number];
-export const DEFAULT_RESULT_LIMIT: ResultLimitOption = 250;
+export const DEFAULT_RESULT_LIMIT: ResultLimitOption = 50;
 
 export const PAGE_SIZE_OPTIONS = [25, 50, 100] as const;
 export type PageSizeOption = (typeof PAGE_SIZE_OPTIONS)[number];
