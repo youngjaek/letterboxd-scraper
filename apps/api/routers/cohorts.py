@@ -36,7 +36,7 @@ DISTRIBUTION_LABELS = [
     "unclassified",
 ]
 
-RESULT_LIMIT_OPTIONS = [100, 250, 500, 1000]
+RESULT_LIMIT_OPTIONS = [50, 100, 250, 500, 1000]
 
 SORTABLE_FIELDS: dict[str, str] = {
     "score": "score",
