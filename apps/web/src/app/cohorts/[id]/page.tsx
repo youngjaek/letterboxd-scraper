@@ -14,6 +14,10 @@ import { isDemoMode } from "@/lib/demo-flags";
 
 const apiBase = serverApiBase;
 const defaultStrategy = "bayesian";
+const shouldCacheHeavyData = isDemoMode || process.env.NODE_ENV === "production";
+const HEAVY_DATA_CACHE_TTL_MS = isDemoMode ? 30_000 : 60_000;
+const shouldCacheScrapeStatus = isDemoMode;
+const SCRAPE_STATUS_CACHE_TTL_MS = 15_000;
 type CohortDetail = {
   id: number;
   label: string;
@@ -49,9 +53,6 @@ type ScrapeProgress = {
   recent_finished: ScrapeMemberStatus[];
 };
 
-const shouldCacheApi = isDemoMode;
-const DEMO_CACHE_TTL_MS = 30_000;
-
 async function fetchCohort(id: string): Promise<CohortDetail | null> {
   const request = async () => {
     const res = await fetch(`${apiBase}/cohorts/${id}`, { cache: "no-store" });
@@ -60,10 +61,10 @@ async function fetchCohort(id: string): Promise<CohortDetail | null> {
     }
     return res.json();
   };
-  if (!shouldCacheApi) {
+  if (!shouldCacheHeavyData) {
     return request();
   }
-  return cacheResult(`cohort:${id}`, DEMO_CACHE_TTL_MS, request);
+  return cacheResult(`cohort:${id}`, HEAVY_DATA_CACHE_TTL_MS, request);
 }
 
 function getParamValues(value: string | string[] | undefined): string[] {
@@ -146,10 +147,10 @@ async function fetchRankings(
     }
     return res.json();
   };
-  if (!shouldCacheApi) {
+  if (!shouldCacheHeavyData) {
     return request();
   }
-  return cacheResult(`cohort:${id}:rankings:${query.toString()}`, DEMO_CACHE_TTL_MS, request);
+  return cacheResult(`cohort:${id}:rankings:${query.toString()}`, HEAVY_DATA_CACHE_TTL_MS, request);
 }
 
 async function fetchScrapeStatus(id: string): Promise<ScrapeProgress | null> {
@@ -160,10 +161,10 @@ async function fetchScrapeStatus(id: string): Promise<ScrapeProgress | null> {
     }
     return res.json();
   };
-  if (!shouldCacheApi) {
+  if (!shouldCacheScrapeStatus) {
     return request();
   }
-  return cacheResult(`cohort:${id}:scrape-status`, DEMO_CACHE_TTL_MS, request);
+  return cacheResult(`cohort:${id}:scrape-status`, SCRAPE_STATUS_CACHE_TTL_MS, request);
 }
 
 export default async function CohortRankingsPage({

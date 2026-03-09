@@ -1,18 +1,12 @@
 import { CreateCohortForm } from "@/components/create-cohort-form";
-import Link from "next/link";
 import { serverApiBase } from "@/lib/api-base";
 import { DemoBanner } from "@/components/demo-banner";
 import { cacheResult } from "@/lib/server-cache";
 import { isDemoMode } from "@/lib/demo-flags";
+import { CohortList } from "@/components/cohort-list";
+import type { CohortSummary } from "@/types/cohort";
 
 const apiBase = serverApiBase;
-
-type CohortSummary = {
-  id: number;
-  label: string;
-  member_count: number;
-  created_at: string;
-};
 
 type RankingItem = {
   film_id: number;
@@ -104,25 +98,7 @@ export default async function Home() {
             <span className="text-sm text-slate-400">{cohorts.length} total</span>
           </div>
           <div className="rounded-xl border border-white/10 bg-white/5">
-            {cohorts.length === 0 ? (
-              <p className="p-6 text-sm text-slate-400">No cohorts are available in this demo right now.</p>
-            ) : (
-              <ul>
-                {cohorts.map((cohort) => (
-                <li key={cohort.id} className="border-b border-white/5 px-6 py-4 last:border-b-0">
-                  <Link href={`/cohorts/${cohort.id}`} className="flex items-center justify-between">
-                    <div>
-                      <p className="text-lg font-medium text-brand-primary">{cohort.label}</p>
-                      <p className="text-xs text-slate-400">ID {cohort.id} · Created {new Date(cohort.created_at).toLocaleDateString()}</p>
-                    </div>
-                    <div className="text-right text-sm text-slate-200">
-                      <p>{cohort.member_count} member(s)</p>
-                    </div>
-                  </Link>
-                </li>
-              ))}
-            </ul>
-            )}
+            <CohortList cohorts={cohorts} />
           </div>
         </div>
         <div>
