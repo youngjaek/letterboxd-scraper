@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { getApiBase } from "@/lib/api-base";
 import { isDemoMode } from "@/lib/demo-flags";
 
@@ -28,6 +28,7 @@ export type ScrapeProgress = {
   queued: number;
   in_progress: ScrapeMemberStatus[];
   recent_finished: ScrapeMemberStatus[];
+  current_stage?: string | null;
 };
 
 async function fetchStatus(cohortId: number): Promise<ScrapeProgress | null> {
@@ -50,25 +51,47 @@ async function fetchStatus(cohortId: number): Promise<ScrapeProgress | null> {
 export function ScrapeProgressPanel({
   cohortId,
   initialStatus,
+  onStatusUpdate,
 }: {
   cohortId: number;
   initialStatus: ScrapeProgress | null;
+  onStatusUpdate?: (status: ScrapeProgress | null) => void;
 }) {
   const [status, setStatus] = useState<ScrapeProgress | null>(initialStatus);
   const demoLocked = isDemoMode;
 
   useEffect(() => {
+    setStatus(initialStatus);
+  }, [initialStatus]);
+
+  const emitUpdate = useCallback(
+    (next: ScrapeProgress | null) => {
+      if (onStatusUpdate) {
+        onStatusUpdate(next);
+      }
+    },
+    [onStatusUpdate],
+  );
+
+  useEffect(() => {
     if (demoLocked) {
       return;
     }
-    const interval = setInterval(async () => {
+    let cancelled = false;
+    const poll = async () => {
       const next = await fetchStatus(cohortId);
-      if (next) {
+      if (!cancelled) {
         setStatus(next);
+        emitUpdate(next);
       }
-    }, 5000);
-    return () => clearInterval(interval);
-  }, [cohortId, demoLocked]);
+    };
+    poll();
+    const interval = setInterval(poll, 5000);
+    return () => {
+      cancelled = true;
+      clearInterval(interval);
+    };
+  }, [cohortId, demoLocked, emitUpdate]);
 
   const displayStatus = status?.status ?? "idle";
   const total = status?.total_members ?? 0;
@@ -78,29 +101,66 @@ export function ScrapeProgressPanel({
   const recent = (status?.recent_finished ?? []).slice(0, 5);
   const queued = status?.queued ?? 0;
   const failed = status?.failed ?? 0;
-  const subtitle = demoLocked
-    ? "Demo snapshot · no live scrapes"
-    : displayStatus === "running"
-      ? `Scraping ${completed}/${total}`
-      : total > 0
-        ? `Last run ${displayStatus}`
-        : "No runs yet";
+  const currentStage = status?.current_stage ?? null;
+  const stageLabels: Record<string, string> = {
+    refreshing: "Gathering follow graph",
+    scraping: "Scraping ratings",
+    computing: "Computing rankings",
+    error: "Sync failed",
+  };
+  const activeStageLabel = currentStage ? stageLabels[currentStage] ?? currentStage : null;
+  const subtitle = (() => {
+    if (demoLocked) {
+      return "Demo snapshot · no live scrapes";
+    }
+    if (currentStage === "refreshing") {
+      return "Gathering follow graph…";
+    }
+    if (currentStage === "scraping") {
+      return total > 0 ? `Scraping ${completed}/${total}` : "Scraping members…";
+    }
+    if (currentStage === "computing") {
+      return "Computing stats & rankings…";
+    }
+    if (currentStage === "error") {
+      return "Sync failed. Retry when ready.";
+    }
+    if (displayStatus === "running") {
+      return total > 0 ? `Scraping ${completed}/${total}` : "Scraping members…";
+    }
+    return total > 0 ? `Last run ${displayStatus}` : "No runs yet";
+  })();
+  const progressPercent =
+    currentStage === "scraping"
+      ? percent
+      : currentStage === "computing"
+        ? 100
+        : currentStage === "refreshing"
+          ? 15
+          : percent;
 
   return (
     <div className="rounded-xl border border-white/10 bg-black/30 p-4">
       <div className="flex flex-col gap-1">
-        <p className="text-sm font-semibold text-white">Pipeline Activity</p>
+        <div className="flex flex-wrap items-center gap-2">
+          <p className="text-sm font-semibold text-white">Pipeline Activity</p>
+          {activeStageLabel ? (
+            <span className="rounded-full border border-white/15 px-2 py-0.5 text-[0.6rem] uppercase tracking-[0.3em] text-slate-200">
+              {activeStageLabel}
+            </span>
+          ) : null}
+        </div>
         <p className="text-xs text-slate-400">{subtitle}</p>
       </div>
       <div className="mt-3 h-2 w-full overflow-hidden rounded-full bg-white/10">
-        <div className="h-full bg-brand-primary transition-all" style={{ width: `${percent}%` }} />
+        <div className="h-full bg-brand-primary transition-all" style={{ width: `${progressPercent}%` }} />
       </div>
       <div className="mt-3 flex flex-wrap gap-4 text-xs text-slate-300">
         <span>Completed: {completed}</span>
         <span>Queued: {queued}</span>
         <span>Failed: {failed}</span>
       </div>
-      {activeList.length > 0 && (
+      {currentStage === "scraping" && activeList.length > 0 && (
         <div className="mt-4">
           <p className="text-xs uppercase tracking-[0.3em] text-slate-400">Currently Scraping</p>
           <ul className="mt-2 grid gap-2 sm:grid-cols-2">

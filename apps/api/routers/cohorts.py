@@ -235,6 +235,10 @@ def get_cohort_detail(cohort_id: int, session: Session = Depends(get_db_session)
 
 @router.get("/{cohort_id}/scrape-status", response_model=ScrapeProgress, summary="Scrape progress")
 def get_scrape_status(cohort_id: int, session: Session = Depends(get_db_session)) -> ScrapeProgress:
+    cohort = session.get(models.Cohort, cohort_id)
+    if not cohort:
+        raise HTTPException(status_code=404, detail="Cohort not found")
+    current_stage = cohort.current_task_stage
     run_stmt = (
         select(models.ScrapeRun)
         .where(models.ScrapeRun.cohort_id == cohort_id)
@@ -243,7 +247,7 @@ def get_scrape_status(cohort_id: int, session: Session = Depends(get_db_session)
     )
     run = session.scalars(run_stmt).one_or_none()
     if not run:
-        return ScrapeProgress(status="idle")
+        return ScrapeProgress(status="idle", current_stage=current_stage)
     members_stmt = (
         select(models.ScrapeRunMember)
         .where(models.ScrapeRunMember.run_id == run.id)
@@ -293,6 +297,7 @@ def get_scrape_status(cohort_id: int, session: Session = Depends(get_db_session)
         queued=queued,
         in_progress=in_progress,
         recent_finished=recent_finished,
+        current_stage=current_stage,
     )
 
 
@@ -616,6 +621,7 @@ def trigger_cohort_sync(
         raise HTTPException(status_code=409, detail="Cohort already syncing")
     result = pipeline_tasks.run_cohort_pipeline.delay(cohort_id, incremental=incremental)
     cohort.current_task_id = result.id
+    cohort.current_task_stage = "refreshing"
     session.commit()
     return {"task_id": result.id, "cohort_id": cohort_id, "incremental": incremental}
 
@@ -636,6 +642,7 @@ def stop_cohort_sync(
         raise HTTPException(status_code=409, detail="No active sync")
     pipeline_tasks.celery_app.control.revoke(task_id, terminate=True, signal="SIGTERM")
     cohort.current_task_id = None
+    cohort.current_task_stage = None
     session.commit()
     return {"stopped_task_id": task_id, "cohort_id": cohort_id}
 

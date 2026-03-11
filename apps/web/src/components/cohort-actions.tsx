@@ -26,16 +26,34 @@ type CohortActionsProps = {
   cohortId: number;
   currentLabel: string;
   currentTaskId?: string | null;
+  currentTaskStage?: string | null;
 };
 
-export function CohortActions({ cohortId, currentLabel, currentTaskId }: CohortActionsProps) {
+export function CohortActions({ cohortId, currentLabel, currentTaskId, currentTaskStage }: CohortActionsProps) {
   const demoLocked = isDemoMode;
   const [label, setLabel] = useState(currentLabel);
   const [status, setStatus] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const router = useRouter();
-  const isSyncing = Boolean(currentTaskId);
+  const syncingStages = new Set(["refreshing", "scraping", "computing"]);
+  const stageIsActive = currentTaskStage ? syncingStages.has(currentTaskStage) : false;
+  const hasStageSignal = currentTaskStage !== undefined;
+  const isSyncing = stageIsActive || (!hasStageSignal && Boolean(currentTaskId));
+  const stageLabels: Record<string, string> = {
+    refreshing: "Gathering follow graph",
+    scraping: "Scraping ratings",
+    computing: "Computing rankings",
+    error: "Sync failed",
+  };
+  let statusLabel = "Idle";
+  if (currentTaskStage && stageLabels[currentTaskStage]) {
+    statusLabel = stageLabels[currentTaskStage];
+  } else if (isSyncing) {
+    statusLabel = "Syncing…";
+  }
+  const statusClass =
+    currentTaskStage === "error" ? "text-red-400" : isSyncing ? "text-yellow-300" : "text-slate-100";
 
   if (demoLocked) {
     return (
@@ -114,9 +132,7 @@ export function CohortActions({ cohortId, currentLabel, currentTaskId }: CohortA
       <h3 className="text-lg font-semibold text-brand-primary">Manage Cohort</h3>
       <p className="text-xs uppercase tracking-[0.3em] text-slate-400">
         Status:{" "}
-        <span className={isSyncing ? "text-yellow-300" : "text-slate-100"}>
-          {isSyncing ? "Syncing…" : "Idle"}
-        </span>
+        <span className={statusClass}>{statusLabel}</span>
       </p>
       <form onSubmit={handleRename} className="space-y-2">
         <label className="block text-xs uppercase text-slate-400">Label</label>

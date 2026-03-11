@@ -11,6 +11,7 @@ import { RankingRow } from "@/types/ranking-row";
 import { DemoBanner } from "@/components/demo-banner";
 import { cacheResult } from "@/lib/server-cache";
 import { isDemoMode } from "@/lib/demo-flags";
+import type { CohortDetail } from "@/types/cohort";
 
 const apiBase = serverApiBase;
 const defaultStrategy = "bayesian";
@@ -18,17 +19,6 @@ const shouldCacheHeavyData = isDemoMode || process.env.NODE_ENV === "production"
 const HEAVY_DATA_CACHE_TTL_MS = isDemoMode ? 30_000 : 60_000;
 const shouldCacheScrapeStatus = isDemoMode;
 const SCRAPE_STATUS_CACHE_TTL_MS = 15_000;
-type CohortDetail = {
-  id: number;
-  label: string;
-  seed_user_id: number | null;
-  seed_username?: string | null;
-  member_count: number;
-  created_at: string;
-  updated_at?: string | null;
-  current_task_id?: string | null;
-  members: Array<{ username: string; avatar_url: string | null }>;
-};
 
 type ScrapeMemberStatus = {
   username: string;
@@ -51,6 +41,7 @@ type ScrapeProgress = {
   queued: number;
   in_progress: ScrapeMemberStatus[];
   recent_finished: ScrapeMemberStatus[];
+  current_stage?: string | null;
 };
 
 async function fetchCohort(id: string): Promise<CohortDetail | null> {
@@ -223,7 +214,14 @@ export default async function CohortRankingsPage({
           ← Back to list
         </Link>
       </div>
-      <ManageCohortPanel cohortId={cohort.id} label={cohort.label} currentTaskId={cohort.current_task_id} members={cohort.members} scrapeStatus={scrapeStatus} />
+      <ManageCohortPanel
+        cohortId={cohort.id}
+        label={cohort.label}
+        currentTaskId={cohort.current_task_id}
+        currentTaskStage={cohort.current_task_stage}
+        members={cohort.members}
+        scrapeStatus={scrapeStatus}
+      />
       <Suspense fallback={<RankingPanelFallback />}>
         <RankingSection
           cohortId={cohort.id}

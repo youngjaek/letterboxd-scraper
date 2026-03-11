@@ -58,6 +58,10 @@ celery_app.conf.beat_schedule = {
 def run_cohort_pipeline(cohort_id: int, incremental: bool = True) -> dict:
     """Orchestrate refresh → scrape → stats → rankings → enrichment for a cohort."""
     settings = _load_settings()
+    stage_manager = _CohortStageManager(settings, cohort_id)
+    stage_manager.set_stage("refreshing")
+    scrape_summary = None
+    enrichment_task = None
     try:
         with job_run(
             settings,
@@ -66,18 +70,17 @@ def run_cohort_pipeline(cohort_id: int, incremental: bool = True) -> dict:
             payload={"incremental": incremental},
         ):
             refresh_result = workflow_service.refresh_cohort_membership(settings, cohort_id)
+            stage_manager.set_stage("scraping")
             scrape_summary = workflow_service.scrape_cohort_members(
                 settings, cohort_id, incremental=incremental
             )
+            stage_manager.set_stage("computing")
             stats_result = workflow_service.refresh_stats(settings, concurrently=False)
             ranking_result = workflow_service.compute_rankings(settings, cohort_id)
             bucket_result = workflow_service.compute_bucket_insights(settings, cohort_id)
             film_ids = list(scrape_summary.touched_film_ids)
-            enrichment_result = workflow_service.enrich_films(
-                settings,
-                film_ids=film_ids or None,
-                limit=len(film_ids) if film_ids else 50,
-            )
+            stage_manager.set_stage(None)
+            enrichment_task = _schedule_enrichment_job(film_ids)
         return {
             "refresh": {
                 "cohort_id": refresh_result.cohort_id,
@@ -108,13 +111,18 @@ def run_cohort_pipeline(cohort_id: int, incremental: bool = True) -> dict:
                 "rows": bucket_result.rows,
                 "persisted": bucket_result.persisted,
             },
-            "enrichment": asdict(enrichment_result),
+            "enrichment": enrichment_task or {"scheduled": False},
         }
+    except Exception:
+        stage_manager.set_stage("error")
+        raise
     finally:
         with get_session(settings) as session:
             cohort = session.get(models.Cohort, cohort_id)
             if cohort:
                 cohort.current_task_id = None
+                if cohort.current_task_stage not in (None, "error"):
+                    cohort.current_task_stage = None
                 session.add(cohort)
                 session.commit()
 
@@ -209,3 +217,26 @@ def _chunk(items: Sequence[str | int], size: int) -> Iterator[List[str | int]]:
             current = []
     if current:
         yield current
+
+
+class _CohortStageManager:
+    def __init__(self, settings: Settings, cohort_id: int):
+        self.settings = settings
+        self.cohort_id = cohort_id
+
+    def set_stage(self, stage: Optional[str]) -> None:
+        with get_session(self.settings) as session:
+            cohort = session.get(models.Cohort, self.cohort_id)
+            if not cohort:
+                return
+            cohort.current_task_stage = stage
+            session.add(cohort)
+            session.commit()
+
+
+def _schedule_enrichment_job(film_ids: Sequence[int]) -> Optional[dict]:
+    ids = [int(value) for value in film_ids if value is not None]
+    if not ids:
+        return None
+    task = enrich_missing_films.apply_async(args=[ids, len(ids)])
+    return {"scheduled": True, "film_count": len(ids), "task_id": task.id}

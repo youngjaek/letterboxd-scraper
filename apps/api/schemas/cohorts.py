@@ -15,6 +15,7 @@ class CohortSummary(BaseModel):
     created_at: datetime
     updated_at: datetime | None = None
     current_task_id: str | None = None
+    current_task_stage: str | None = None
 
     model_config = {
         "from_attributes": True,
@@ -63,6 +64,7 @@ class ScrapeProgress(BaseModel):
     queued: int = 0
     in_progress: list[ScrapeMemberStatus] = []
     recent_finished: list[ScrapeMemberStatus] = []
+    current_stage: str | None = None
 
 
 class CohortCreateRequest(BaseModel):

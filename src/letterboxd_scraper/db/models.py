@@ -183,6 +183,7 @@ class Cohort(Base):
         DateTime(timezone=True), default=_utcnow, onupdate=_utcnow
     )
     current_task_id: Mapped[Optional[str]] = mapped_column(String)
+    current_task_stage: Mapped[Optional[str]] = mapped_column(String)
 
     members: Mapped[list["CohortMember"]] = relationship(back_populates="cohort", cascade="all, delete-orphan")
 
