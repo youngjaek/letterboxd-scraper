@@ -49,3 +49,28 @@ jobs:
 
       - name: Run backend tests
         run: pytest
+
+  deploy:
+    needs: build-and-test
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Deploy to Kinoboxd server
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.DO_SSH_HOST }}
+          username: ${{ secrets.DO_SSH_USER }}
+          key: ${{ secrets.DO_SSH_KEY }}
+          script: |
+            set -euo pipefail
+            cd /root/kinoboxd
+            git fetch origin main
+            git reset --hard origin/main
+            npm ci --prefix apps/web
+            npm run build --prefix apps/web
+            pm2 reload kinoboxd-web || true
+            docker compose -f docker-compose.dev.yml pull
+            docker compose -f docker-compose.dev.yml up -d
+            docker compose -f docker-compose.dev.yml exec -T api bash -c 'cd /app && set -a && source .env.docker && alembic -c /app/alembic.ini upgrade head'
+            docker compose -f docker-compose.dev.yml restart api celery-worker
