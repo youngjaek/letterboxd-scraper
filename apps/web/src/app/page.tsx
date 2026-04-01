@@ -8,25 +8,6 @@ import type { CohortSummary } from "@/types/cohort";
 
 const apiBase = serverApiBase;
 
-type RankingItem = {
-  film_id: number;
-  rank: number | null;
-  score: number;
-  title: string;
-  slug: string;
-  release_year?: number | null;
-  watchers: number | null;
-  avg_rating: number | null;
-  rating_histogram?: Array<{ key: string; label: string; count: number }>;
-  directors?: Array<{ id: number; name: string }>;
-  genres?: string[];
-};
-
-type RankingResponse = {
-  items: RankingItem[];
-  total: number;
-};
-
 const DEMO_ALLOWED_HANDLES = ["thebigal", "filipe"];
 const DEMO_BLOCKED_IDS = new Set<number>([5, 6]);
 
@@ -48,24 +29,6 @@ async function fetchCohorts(): Promise<CohortSummary[]> {
   return cacheResult("cohorts:list", DEMO_CACHE_TTL_MS, request);
 }
 
-async function fetchRankings(cohortId: number, limit = 10): Promise<RankingResponse> {
-  const request = async () => {
-    const res = await fetch(`${apiBase}/cohorts/${cohortId}/rankings?limit=${limit}`, {
-      cache: "no-store",
-    });
-    if (!res.ok) {
-      console.warn("Failed to load rankings", res.status, await res.text());
-      return { items: [], total: 0 };
-    }
-    return res.json();
-  };
-  if (!shouldCacheApi) {
-    return request();
-  }
-  const cacheKey = `rankings:home:${cohortId}:limit=${limit}`;
-  return cacheResult(cacheKey, DEMO_CACHE_TTL_MS, request);
-}
-
 function curateDemoCohorts(cohorts: CohortSummary[]): CohortSummary[] {
   return cohorts.filter((cohort) => {
     if (DEMO_BLOCKED_IDS.has(cohort.id)) {
@@ -79,9 +42,6 @@ function curateDemoCohorts(cohorts: CohortSummary[]): CohortSummary[] {
 export default async function Home() {
   const allCohorts = await fetchCohorts();
   const cohorts = isDemoMode ? curateDemoCohorts(allCohorts) : allCohorts;
-  const featuredCohort = cohorts[0];
-  const rankingResponse = featuredCohort ? await fetchRankings(featuredCohort.id) : { items: [], total: 0 };
-  const rankings = rankingResponse.items;
   return (
     <section className="mx-auto flex max-w-5xl flex-col gap-10">
       <DemoBanner />
@@ -103,31 +63,6 @@ export default async function Home() {
         </div>
         <div>
           <CreateCohortForm />
-          {featuredCohort && (
-            <div className="mt-6 rounded-xl border border-white/10 bg-white/5 p-6">
-              <h3 className="text-lg font-semibold text-brand-primary">
-                Top picks · {featuredCohort.label}
-              </h3>
-              {rankings.length === 0 ? (
-                <p className="mt-2 text-sm text-slate-400">No rankings yet.</p>
-              ) : (
-                <ol className="mt-4 space-y-3">
-                  {rankings.map((item) => (
-                    <li key={item.film_id} className="flex items-center justify-between text-sm">
-                      <div>
-                        <span className="mr-3 text-xs text-slate-500">#{item.rank ?? "?"}</span>
-                        <span className="font-medium text-white">{item.title}</span>
-                      </div>
-                      <div className="text-right text-slate-400">
-                        <p>{item.avg_rating?.toFixed(2) ?? "--"} avg</p>
-                        <p className="text-xs">{item.watchers ?? 0} watchers</p>
-                      </div>
-                    </li>
-                  ))}
-                </ol>
-              )}
-            </div>
-          )}
         </div>
       </div>
     </section>
