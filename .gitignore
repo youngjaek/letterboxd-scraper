@@ -1,28 +1,67 @@
-legacy/
-exported/*.csv
+########################################
+# OS / Editor junk
+########################################
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+.idea/
+.vscode/
+
+########################################
+# Secrets / environment
+########################################
 .env
+.env.*
+!.env.example
+.env.docker
+apps/web/.env.local
+
+########################################
+# Python build / cache artifacts
+########################################
 __pycache__/
 *.py[cod]
+*.so
 .pytest_cache/
 .mypy_cache/
+.ruff_cache/
 .coverage
+.coverage.*
+htmlcov/
+.tox/
+.nox/
 *.egg-info/
+.eggs/
+build/
+dist/
+pip-wheel-metadata/
 .venv/
-logs/
 
-# Frontend build artifacts
+########################################
+# Node / Next.js artifacts
+########################################
 node_modules/
+.npm
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
 .next/
 apps/web/node_modules/
 apps/web/.next/
 apps/web/.turbo/
 apps/web/.eslintcache
-apps/web/.env.local
+.swc/
+.turbo/
+.vercel/
 
+########################################
+# Project-specific runtime files
+########################################
+legacy/
+exported/*.csv
+logs/
 tests/fixtures/_ignored/
-
 docs/roadmap
 src/letterboxd_ratings_scraper.egg-info/
-.env.docker
-
-docs/dev_session_notes.md
