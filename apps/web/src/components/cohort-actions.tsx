@@ -1,7 +1,7 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useState, FormEvent } from "react";
+import { useState, type FormEvent } from "react";
 import { getApiBase } from "@/lib/api-base";
 import { isDemoMode } from "@/lib/demo-flags";
 
@@ -46,21 +46,27 @@ export function CohortActions({ cohortId, currentLabel, currentTaskId, currentTa
     computing: "Computing rankings",
     error: "Sync failed",
   };
+
   let statusLabel = "Idle";
   if (currentTaskStage && stageLabels[currentTaskStage]) {
     statusLabel = stageLabels[currentTaskStage];
   } else if (isSyncing) {
-    statusLabel = "Syncing…";
+    statusLabel = "Syncing...";
   }
+
   const statusClass =
-    currentTaskStage === "error" ? "text-red-400" : isSyncing ? "text-yellow-300" : "text-slate-100";
+    currentTaskStage === "error" ? "text-red-300" : isSyncing ? "text-amber-200" : "text-[color:var(--text-strong)]";
 
   if (demoLocked) {
     return (
-      <div className="space-y-4 rounded-xl border border-white/10 bg-white/5 p-5 text-sm text-slate-300">
-        <h3 className="text-lg font-semibold text-brand-primary">Manage Cohort</h3>
-        <p>
-          Demo visitors can explore rankings, but sync controls stay disabled in this read-only preview.
+      <div className="panel-soft space-y-4 text-sm text-[color:var(--text-muted)]">
+        <div className="space-y-2">
+          <p className="eyebrow">Operations</p>
+          <h3 className="text-xl font-semibold text-[color:var(--text-strong)]">This cohort is viewable but locked.</h3>
+        </div>
+        <p className="leading-7">
+          Preview visitors can explore the ranking board and filters, but sync, rename, and delete actions stay
+          disabled.
         </p>
       </div>
     );
@@ -73,7 +79,7 @@ export function CohortActions({ cohortId, currentLabel, currentTaskId, currentTa
     setError(null);
     try {
       await sendRequest(`/cohorts/${cohortId}?label=${encodeURIComponent(label)}`, { method: "PATCH" });
-      setStatus("Renamed cohort.");
+      setStatus("Cohort renamed.");
       router.refresh();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Rename failed");
@@ -113,13 +119,15 @@ export function CohortActions({ cohortId, currentLabel, currentTaskId, currentTa
   }
 
   async function handleDelete() {
-    if (!confirm("Delete this cohort?")) return;
+    if (!confirm("Delete this cohort? This cannot be undone.")) {
+      return;
+    }
     setBusy(true);
     setStatus(null);
     setError(null);
     try {
       await sendRequest(`/cohorts/${cohortId}`, { method: "DELETE" });
-      setStatus("Deleted cohort. Reload homepage to see changes.");
+      setStatus("Cohort deleted. Return to the app index to continue browsing.");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Delete failed");
     } finally {
@@ -128,29 +136,41 @@ export function CohortActions({ cohortId, currentLabel, currentTaskId, currentTa
   }
 
   return (
-    <div className="space-y-4 rounded-xl border border-white/10 bg-white/5 p-5">
-      <h3 className="text-lg font-semibold text-brand-primary">Manage Cohort</h3>
-      <p className="text-xs uppercase tracking-[0.3em] text-slate-400">
-        Status:{" "}
-        <span className={statusClass}>{statusLabel}</span>
-      </p>
-      <form onSubmit={handleRename} className="space-y-2">
-        <label className="block text-xs uppercase text-slate-400">Label</label>
-        <div className="flex gap-2">
+    <div className="panel-soft space-y-5">
+      <div className="space-y-2">
+        <p className="eyebrow">Operations</p>
+        <h3 className="text-xl font-semibold text-[color:var(--text-strong)]">Control the cohort lifecycle.</h3>
+        <p className="text-xs uppercase tracking-[0.24em] text-[color:var(--text-faint)]">
+          Status: <span className={statusClass}>{statusLabel}</span>
+        </p>
+      </div>
+
+      <form onSubmit={handleRename} className="space-y-3">
+        <label htmlFor="rename-label" className="field-label">
+          Cohort label
+        </label>
+        <div className="flex flex-col gap-3 sm:flex-row">
           <input
-            className="flex-1 rounded border border-white/10 bg-black/30 px-3 py-2 text-sm"
+            id="rename-label"
+            className="field-input flex-1"
             value={label}
-            onChange={(e) => setLabel(e.target.value)}
+            onChange={(event) => setLabel(event.target.value)}
           />
-          <button className="rounded bg-brand-primary px-4 py-2 text-sm font-semibold text-black" disabled={busy}>
+          <button
+            type="submit"
+            className="button-secondary whitespace-nowrap disabled:cursor-not-allowed disabled:opacity-60"
+            disabled={busy}
+          >
             Rename
           </button>
         </div>
       </form>
-      <div className="flex gap-2">
+
+      <div className="grid gap-3 sm:grid-cols-2">
         {isSyncing ? (
           <button
-            className="flex-1 rounded border border-yellow-400 px-3 py-2 text-sm text-yellow-300"
+            type="button"
+            className="button-secondary border-amber-200/40 text-amber-100 disabled:cursor-not-allowed disabled:opacity-60"
             onClick={handleStop}
             disabled={busy}
           >
@@ -158,7 +178,8 @@ export function CohortActions({ cohortId, currentLabel, currentTaskId, currentTa
           </button>
         ) : (
           <button
-            className="flex-1 rounded border border-white/20 px-3 py-2 text-sm text-white"
+            type="button"
+            className="button-primary disabled:cursor-not-allowed disabled:opacity-60"
             onClick={handleSync}
             disabled={busy}
           >
@@ -166,15 +187,17 @@ export function CohortActions({ cohortId, currentLabel, currentTaskId, currentTa
           </button>
         )}
         <button
-          className="flex-1 rounded border border-red-400 px-3 py-2 text-sm text-red-400"
+          type="button"
+          className="button-ghost border-red-300/30 text-red-200 disabled:cursor-not-allowed disabled:opacity-60"
           onClick={handleDelete}
           disabled={busy}
         >
-          Delete
+          Delete cohort
         </button>
       </div>
-      {status && <p className="text-sm text-green-400">{status}</p>}
-      {error && <p className="text-sm text-red-400">{error}</p>}
+
+      {status ? <p className="text-sm text-emerald-300">{status}</p> : null}
+      {error ? <p className="text-sm text-red-300">{error}</p> : null}
     </div>
   );
 }

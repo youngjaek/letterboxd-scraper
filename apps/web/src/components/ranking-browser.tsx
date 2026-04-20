@@ -1,7 +1,7 @@
 "use client";
 
+import type { Route } from "next";
 import Image from "next/image";
-import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import { PaginationControls } from "./pagination-controls";
@@ -223,7 +223,7 @@ export function RankingBrowser({
     }
     params.delete("page");
     const query = params.toString();
-    const href = query ? `${pathname}?${query}` : pathname;
+    const href = (query ? `${pathname}?${query}` : pathname) as Route;
     router.push(href, { scroll: false });
   }
 
@@ -282,13 +282,14 @@ export function RankingBrowser({
                           #{item.rank ?? "?"}
                         </p>
                         <div className="flex flex-wrap items-baseline gap-2">
-                          <Link
+                          <a
                             href={letterboxdUrl(item.slug)}
                             target="_blank"
+                            rel="noreferrer"
                             className="text-xl font-semibold text-white hover:text-brand-primary"
                           >
                             {item.title}
-                          </Link>
+                          </a>
                           {metadataLine ? (
                             <span className="text-sm text-slate-300">
                               {item.release_year ? `(${item.release_year})` : ""}

@@ -170,13 +170,15 @@ def list_cohorts(session: Session = Depends(get_db_session)) -> list[CohortSumma
             models.Cohort.id,
             models.Cohort.label,
             models.Cohort.seed_user_id,
+            models.User.letterboxd_username.label("seed_username"),
             models.Cohort.created_at,
             models.Cohort.updated_at,
             models.Cohort.current_task_id,
             func.count(models.CohortMember.user_id).label("member_count"),
         )
+        .outerjoin(models.User, models.User.id == models.Cohort.seed_user_id)
         .outerjoin(models.CohortMember, models.CohortMember.cohort_id == models.Cohort.id)
-        .group_by(models.Cohort.id)
+        .group_by(models.Cohort.id, models.User.letterboxd_username)
         .order_by(models.Cohort.created_at.desc())
     )
     results = session.execute(stmt).all()
@@ -185,6 +187,7 @@ def list_cohorts(session: Session = Depends(get_db_session)) -> list[CohortSumma
             id=row.id,
             label=row.label,
             seed_user_id=row.seed_user_id,
+            seed_username=row.seed_username,
             member_count=row.member_count,
             created_at=row.created_at,
             updated_at=row.updated_at,

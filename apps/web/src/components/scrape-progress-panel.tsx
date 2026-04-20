@@ -111,22 +111,22 @@ export function ScrapeProgressPanel({
   const activeStageLabel = currentStage ? stageLabels[currentStage] ?? currentStage : null;
   const subtitle = (() => {
     if (demoLocked) {
-      return "Demo snapshot · no live scrapes";
+      return "Preview snapshot - no live scrapes";
     }
     if (currentStage === "refreshing") {
-      return "Gathering follow graph…";
+      return "Gathering follow graph...";
     }
     if (currentStage === "scraping") {
-      return total > 0 ? `Scraping ${completed}/${total}` : "Scraping members…";
+      return total > 0 ? `Scraping ${completed}/${total}` : "Scraping members...";
     }
     if (currentStage === "computing") {
-      return "Computing stats & rankings…";
+      return "Computing stats and rankings...";
     }
     if (currentStage === "error") {
       return "Sync failed. Retry when ready.";
     }
     if (displayStatus === "running") {
-      return total > 0 ? `Scraping ${completed}/${total}` : "Scraping members…";
+      return total > 0 ? `Scraping ${completed}/${total}` : "Scraping members...";
     }
     return total > 0 ? `Last run ${displayStatus}` : "No runs yet";
   })();
@@ -140,53 +140,64 @@ export function ScrapeProgressPanel({
           : percent;
 
   return (
-    <div className="rounded-xl border border-white/10 bg-black/30 p-4">
-      <div className="flex flex-col gap-1">
+    <div className="panel-soft space-y-4">
+      <div className="flex flex-col gap-2">
         <div className="flex flex-wrap items-center gap-2">
-          <p className="text-sm font-semibold text-white">Pipeline Activity</p>
-          {activeStageLabel ? (
-            <span className="rounded-full border border-white/15 px-2 py-0.5 text-[0.6rem] uppercase tracking-[0.3em] text-slate-200">
-              {activeStageLabel}
-            </span>
-          ) : null}
+          <p className="eyebrow">Pipeline activity</p>
+          {activeStageLabel ? <span className="status-chip">{activeStageLabel}</span> : null}
         </div>
-        <p className="text-xs text-slate-400">{subtitle}</p>
+        <p className="text-sm text-[color:var(--text-muted)]">{subtitle}</p>
       </div>
-      <div className="mt-3 h-2 w-full overflow-hidden rounded-full bg-white/10">
-        <div className="h-full bg-brand-primary transition-all" style={{ width: `${progressPercent}%` }} />
+
+      <div className="h-2 w-full overflow-hidden rounded-full bg-white/10">
+        <div
+          className="h-full bg-gradient-to-r from-[color:var(--gold)] to-[color:var(--red)] transition-all"
+          style={{ width: `${progressPercent}%` }}
+        />
       </div>
-      <div className="mt-3 flex flex-wrap gap-4 text-xs text-slate-300">
-        <span>Completed: {completed}</span>
-        <span>Queued: {queued}</span>
-        <span>Failed: {failed}</span>
+
+      <div className="grid gap-3 sm:grid-cols-3">
+        <div className="metric-card">
+          <p className="metric-label">Completed</p>
+          <p className="mt-2 text-lg font-semibold text-[color:var(--text-strong)]">{completed}</p>
+        </div>
+        <div className="metric-card">
+          <p className="metric-label">Queued</p>
+          <p className="mt-2 text-lg font-semibold text-[color:var(--text-strong)]">{queued}</p>
+        </div>
+        <div className="metric-card">
+          <p className="metric-label">Failed</p>
+          <p className="mt-2 text-lg font-semibold text-[color:var(--text-strong)]">{failed}</p>
+        </div>
       </div>
-      {currentStage === "scraping" && activeList.length > 0 && (
-        <div className="mt-4">
-          <p className="text-xs uppercase tracking-[0.3em] text-slate-400">Currently Scraping</p>
-          <ul className="mt-2 grid gap-2 sm:grid-cols-2">
+
+      {currentStage === "scraping" && activeList.length > 0 ? (
+        <div className="space-y-3">
+          <p className="field-label">Currently scraping</p>
+          <ul className="grid gap-2 sm:grid-cols-2">
             {activeList.map((member) => (
-              <li key={member.username} className="rounded border border-white/10 bg-white/5 px-3 py-2 text-sm text-white">
-                @{member.username} <span className="text-xs text-slate-400">{member.mode}</span>
+              <li key={member.username} className="rounded-2xl border border-white/5 bg-black/20 px-3 py-2 text-sm">
+                <span className="font-semibold text-[color:var(--text-strong)]">@{member.username}</span>{" "}
+                <span className="text-[color:var(--text-faint)]">{member.mode}</span>
               </li>
             ))}
           </ul>
         </div>
-      )}
-      {recent.length > 0 && (
-        <div className="mt-4">
-          <p className="text-xs uppercase tracking-[0.3em] text-slate-400">Recently Finished</p>
-          <ul className="mt-2 grid gap-2 sm:grid-cols-2">
+      ) : null}
+
+      {recent.length > 0 ? (
+        <div className="space-y-3">
+          <p className="field-label">Recently finished</p>
+          <ul className="grid gap-2 sm:grid-cols-2">
             {recent.map((member) => (
-              <li key={member.username} className="rounded border border-white/5 bg-black/20 px-3 py-2 text-sm text-slate-200">
-                @{member.username}{" "}
-                <span className={member.status === "failed" ? "text-red-400" : "text-green-400"}>
-                  {member.status}
-                </span>
+              <li key={member.username} className="rounded-2xl border border-white/5 bg-black/20 px-3 py-2 text-sm">
+                <span className="font-semibold text-[color:var(--text-strong)]">@{member.username}</span>{" "}
+                <span className={member.status === "failed" ? "text-red-300" : "text-emerald-300"}>{member.status}</span>
               </li>
             ))}
           </ul>
         </div>
-      )}
+      ) : null}
     </div>
   );
 }

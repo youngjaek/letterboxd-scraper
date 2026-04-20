@@ -1,5 +1,6 @@
 "use client";
 
+import type { Route } from "next";
 import { type ChangeEvent, useMemo } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import { useSyncedSearchParams } from "./search-params-provider";
@@ -25,7 +26,8 @@ export function RankingStrategySelect({ cohortId, currentStrategy }: { cohortId:
     }
     const query = params.toString();
     const base = pathname || `/cohorts/${cohortId}`;
-    router.push(query ? `${base}?${query}` : base);
+    const href = (query ? `${base}?${query}` : base) as Route;
+    router.push(href);
   }
 
   return (

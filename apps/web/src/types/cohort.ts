@@ -5,6 +5,7 @@ export type CohortSummary = {
   created_at: string;
   updated_at?: string | null;
   seed_user_id?: number | null;
+  seed_username?: string | null;
   current_task_id?: string | null;
   current_task_stage?: string | null;
 };

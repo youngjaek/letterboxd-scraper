@@ -11,6 +11,7 @@ class CohortSummary(BaseModel):
     id: int
     label: str
     seed_user_id: int | None = None
+    seed_username: str | None = None
     member_count: int
     created_at: datetime
     updated_at: datetime | None = None

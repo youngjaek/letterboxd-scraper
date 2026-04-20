@@ -1,56 +1,72 @@
-"use client";
-
+import Image from "next/image";
 import Link from "next/link";
-import { useCallback, useRef } from "react";
-import { useRouter } from "next/navigation";
-import type { CohortSummary } from "@/types/cohort";
+import type { CohortCardData } from "@/lib/cohort-data";
 
 type CohortListProps = {
-  cohorts: CohortSummary[];
+  cohorts: CohortCardData[];
 };
 
 export function CohortList({ cohorts }: CohortListProps) {
-  const router = useRouter();
-  const prefetched = useRef<Set<number>>(new Set());
-
-  const handlePrefetch = useCallback(
-    (cohortId: number) => {
-      if (prefetched.current.has(cohortId)) {
-        return;
-      }
-      prefetched.current.add(cohortId);
-      router.prefetch(`/cohorts/${cohortId}`);
-    },
-    [router],
-  );
-
   if (cohorts.length === 0) {
-    return <p className="p-6 text-sm text-slate-400">No cohorts are available in this demo right now.</p>;
+    return (
+      <div className="panel text-sm text-[color:var(--text-soft)]">
+        No canons found.
+      </div>
+    );
   }
 
   return (
-    <ul>
-      {cohorts.map((cohort) => (
-        <li key={cohort.id} className="border-b border-white/5 px-6 py-4 last:border-b-0">
-          <Link
-            href={`/cohorts/${cohort.id}`}
-            className="flex items-center justify-between"
-            onPointerEnter={() => handlePrefetch(cohort.id)}
-            onFocus={() => handlePrefetch(cohort.id)}
-            onTouchStart={() => handlePrefetch(cohort.id)}
-          >
-            <div>
-              <p className="text-lg font-medium text-brand-primary">{cohort.label}</p>
-              <p className="text-xs text-slate-400">
-                ID {cohort.id} · Created {new Date(cohort.created_at).toLocaleDateString()}
+    <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+      {cohorts.map(({ cohort, preview, descriptor, freshnessLabel }) => (
+        <article key={cohort.id} className="panel interactive-card flex h-full flex-col gap-4">
+          <div className="flex items-center justify-between gap-3">
+            <div className="min-w-0">
+              <p className="truncate text-lg font-semibold text-[color:var(--text)]">
+                {cohort.seed_username ? `@${cohort.seed_username}` : cohort.label}
               </p>
+              <p className="truncate text-sm text-[color:var(--text-soft)]">{descriptor}</p>
             </div>
-            <div className="text-right text-sm text-slate-200">
-              <p>{cohort.member_count} member(s)</p>
-            </div>
-          </Link>
-        </li>
+            <span className="status-chip">{cohort.member_count}</span>
+          </div>
+
+          <div className="flex gap-2">
+            {preview.slice(0, 3).map((film) => (
+              <div
+                key={film.film_id}
+                className="poster-tile min-h-[7rem] flex-1"
+              >
+                {film.poster_url ? (
+                  <Image src={film.poster_url} alt={`${film.title} poster`} fill className="object-cover" unoptimized />
+                ) : (
+                  <div className="flex h-full items-center justify-center text-[0.65rem] text-[color:var(--text-muted)]">
+                    No poster
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+
+          <div className="space-y-1">
+            {preview.slice(0, 2).map((film, index) => (
+              <div key={film.film_id} className="flex items-center justify-between gap-3 text-sm">
+                <p className="min-w-0 truncate text-[color:var(--text)]">
+                  {index + 1}. {film.title}
+                </p>
+                <p className="whitespace-nowrap text-[color:var(--text-muted)]">
+                  {film.watchers?.toLocaleString() ?? "N/A"}
+                </p>
+              </div>
+            ))}
+          </div>
+
+          <div className="mt-auto flex items-center justify-between gap-3 border-t border-white/5 pt-4">
+            <p className="text-xs text-[color:var(--text-muted)]">Updated {freshnessLabel}</p>
+            <Link href={`/cohorts/${cohort.id}`} className="button-secondary px-4 py-2 text-xs">
+              Open
+            </Link>
+          </div>
+        </article>
       ))}
-    </ul>
+    </div>
   );
 }

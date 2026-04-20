@@ -34,17 +34,17 @@ export function ManageCohortPanel({
   }, []);
 
   return (
-    <div className="rounded-xl border border-white/10 bg-white/5">
+    <div className="panel">
       <button
         type="button"
         onClick={() => setOpen((prev) => !prev)}
-        className="flex w-full items-center justify-between border-b border-white/10 px-6 py-4 text-xs uppercase tracking-[0.2em] text-slate-400"
+        className="flex w-full items-center justify-between border-b border-white/10 px-1 pb-5 text-xs uppercase tracking-[0.24em] text-[color:var(--text-faint)]"
       >
-        <span>Manage Cohort</span>
-        <span className="text-slate-300">{open ? "Hide" : "Show"}</span>
+        <span>Operations and members</span>
+        <span className="text-[color:var(--text-muted)]">{open ? "Hide" : "Show"}</span>
       </button>
       {open && (
-        <div className="space-y-6 px-6 py-6">
+        <div className="space-y-6 pt-6">
           <div className="grid gap-6 lg:grid-cols-2">
             <CohortActions
               cohortId={cohortId}

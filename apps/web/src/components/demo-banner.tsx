@@ -9,15 +9,20 @@ export function DemoBanner({ className }: DemoBannerProps) {
     return null;
   }
   const classes = [
-    "rounded-xl border border-yellow-400/40 bg-yellow-500/10 px-4 py-3 text-sm text-yellow-200",
+    "panel-soft flex flex-wrap items-center justify-between gap-3 text-sm",
     className,
   ]
     .filter(Boolean)
     .join(" ");
   return (
     <div className={classes}>
-      Kinoboxd is running in <span className="font-semibold text-yellow-100">demo mode</span>. Rankings are read-only
-      and write actions (create/sync/delete) stay disabled in this preview.
+      <div className="flex items-center gap-3">
+        <span className="status-chip">Preview mode</span>
+        <p className="muted-copy">
+          This public build is read-only. You can browse cohorts and rankings, while creation and sync controls stay
+          disabled.
+        </p>
+      </div>
     </div>
   );
 }

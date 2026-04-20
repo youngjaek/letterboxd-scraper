@@ -1,5 +1,6 @@
 "use client";
 
+import type { Route } from "next";
 import { FormEvent, useCallback, useEffect, useMemo, useState, useTransition } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import { useSearchParamsUpdater, useSyncedSearchParams } from "./search-params-provider";
@@ -124,8 +125,8 @@ function MultiSelectFilter<T>({
       .then((res) => (res.ok ? res.json() : []))
       .then((data) => {
         if (!controller.signal.aborted) {
-          const mapped = (data || []).map(mapResponse);
-          const filtered = mapped.filter((option) => !selectedValues.includes(option.value));
+          const mapped = ((data || []) as T[]).map(mapResponse);
+          const filtered = mapped.filter((option: Option) => !selectedValues.includes(option.value));
           setSuggestions(filtered);
           setShowSuggestions(true);
           setHighlightedIndex(filtered.length > 0 ? 0 : -1);
@@ -150,7 +151,8 @@ function MultiSelectFilter<T>({
     mutator(params);
     params.delete("page");
     const queryString = params.toString();
-    router.push(queryString ? `${pathname}?${queryString}` : pathname, { scroll: false });
+    const href = (queryString ? `${pathname}?${queryString}` : pathname) as Route;
+    router.push(href, { scroll: false });
   }
 
   function addOption(option: Option) {
@@ -380,7 +382,8 @@ function ReleaseYearFilters() {
     setRangeValue(formatReleaseYearRange(parsed.min, parsed.max));
     params.delete("page");
     const query = params.toString();
-    router.push(query ? `${pathname}?${query}` : pathname, { scroll: false });
+    const href = (query ? `${pathname}?${query}` : pathname) as Route;
+    router.push(href, { scroll: false });
   }
 
   function setDecade(value: string) {
@@ -392,7 +395,8 @@ function ReleaseYearFilters() {
     }
     params.delete("page");
     const query = params.toString();
-    router.push(query ? `${pathname}?${query}` : pathname, { scroll: false });
+    const href = (query ? `${pathname}?${query}` : pathname) as Route;
+    router.push(href, { scroll: false });
   }
 
   const decades = Array.from({ length: 14 }).map((_, index) => 1900 + index * 10);
@@ -464,7 +468,8 @@ function DistributionFilter() {
         },
         { updateHistory: false },
       );
-      router.push(nextQuery ? `${pathname}?${nextQuery}` : pathname, { scroll: false });
+      const href = (nextQuery ? `${pathname}?${nextQuery}` : pathname) as Route;
+      router.push(href, { scroll: false });
     },
     [pathname, router, updateParams],
   );
@@ -541,7 +546,8 @@ function WatchersFilters() {
     const formatted = formatWatchersRange(minValue, maxValue);
     setRangeValue(formatted);
     const query = params.toString();
-    router.push(query ? `${pathname}?${query}` : pathname, { scroll: false });
+    const href = (query ? `${pathname}?${query}` : pathname) as Route;
+    router.push(href, { scroll: false });
   }
 
   return (
@@ -595,7 +601,8 @@ function LetterboxdSourceFilter() {
     params.delete("page");
     const query = params.toString();
     startTransition(() => {
-      router.push(query ? `${pathname}?${query}` : pathname, { scroll: false });
+      const href = (query ? `${pathname}?${query}` : pathname) as Route;
+      router.push(href, { scroll: false });
     });
   }
 
@@ -698,7 +705,8 @@ export function RankingFilters() {
     filterKeys.forEach((key) => params.delete(key));
     params.delete("page");
     const query = params.toString();
-    router.push(query ? `${pathname}?${query}` : pathname, { scroll: false });
+    const href = (query ? `${pathname}?${query}` : pathname) as Route;
+    router.push(href, { scroll: false });
   }
 
   return (

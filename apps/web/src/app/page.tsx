@@ -1,70 +1,62 @@
-import { CreateCohortForm } from "@/components/create-cohort-form";
-import { serverApiBase } from "@/lib/api-base";
+import Image from "next/image";
+import Link from "next/link";
 import { DemoBanner } from "@/components/demo-banner";
-import { cacheResult } from "@/lib/server-cache";
-import { isDemoMode } from "@/lib/demo-flags";
-import { CohortList } from "@/components/cohort-list";
-import type { CohortSummary } from "@/types/cohort";
-
-const apiBase = serverApiBase;
-
-const DEMO_ALLOWED_HANDLES = ["thebigal", "filipe"];
-const DEMO_BLOCKED_IDS = new Set<number>([5, 6]);
-
-const shouldCacheApi = isDemoMode;
-const DEMO_CACHE_TTL_MS = 30_000;
-
-async function fetchCohorts(): Promise<CohortSummary[]> {
-  const request = async () => {
-    const res = await fetch(`${apiBase}/cohorts`, { cache: "no-store" });
-    if (!res.ok) {
-      console.warn("Failed to load cohorts", res.status, await res.text());
-      return [];
-    }
-    return res.json();
-  };
-  if (!shouldCacheApi) {
-    return request();
-  }
-  return cacheResult("cohorts:list", DEMO_CACHE_TTL_MS, request);
-}
-
-function curateDemoCohorts(cohorts: CohortSummary[]): CohortSummary[] {
-  return cohorts.filter((cohort) => {
-    if (DEMO_BLOCKED_IDS.has(cohort.id)) {
-      return false;
-    }
-    const normalizedLabel = cohort.label.toLowerCase();
-    return DEMO_ALLOWED_HANDLES.some((handle) => normalizedLabel.includes(handle));
-  });
-}
+import { buildCohortCards, fetchVisibleCohorts } from "@/lib/cohort-data";
 
 export default async function Home() {
-  const allCohorts = await fetchCohorts();
-  const cohorts = isDemoMode ? curateDemoCohorts(allCohorts) : allCohorts;
+  const cohorts = await fetchVisibleCohorts();
+  const cards = await buildCohortCards(cohorts, 6, 4);
+  const posters = cards.flatMap((card) => card.preview).slice(0, 6);
+
   return (
-    <section className="mx-auto flex max-w-5xl flex-col gap-10">
+    <section className="mx-auto flex w-full max-w-5xl flex-col gap-8 pb-12">
       <DemoBanner />
-      <header className="space-y-4">
-        <h1 className="text-4xl font-semibold">Kinoboxd</h1>
-        <p className="text-base text-slate-300">
-          Curated Letterboxd cohorts with fresh rankings, sentiment, and watchers—ready for stakeholders to explore.
+
+      <section className="flex flex-col items-center gap-6 pt-8 text-center">
+        <p className="eyebrow">For Letterboxd users</p>
+        <h1 className="display-title max-w-3xl">See a user&apos;s friends&apos; canon of films.</h1>
+        <p className="max-w-2xl text-base leading-7 text-[color:var(--text-soft)]">
+          Search a username, open the canon, and browse the films their circle loves most.
         </p>
-      </header>
-      <div className="grid gap-6 md:grid-cols-[2fr,1fr]">
-        <div className="space-y-3">
-          <div className="flex items-center justify-between">
-            <h2 className="text-2xl font-semibold">Cohorts</h2>
-            <span className="text-sm text-slate-400">{cohorts.length} total</span>
+        <div className="flex flex-wrap justify-center gap-3">
+          <Link href="/cohorts" className="button-primary">
+            Browse canons
+          </Link>
+          <Link href="/cohorts#build" className="button-secondary">
+            Build a canon
+          </Link>
+        </div>
+      </section>
+
+      <section className="panel flex flex-col gap-5">
+        <div className="grid gap-3 grid-cols-3 sm:grid-cols-6">
+          {posters.map((film) => (
+            <div key={film.film_id} className="poster-tile">
+              {film.poster_url ? (
+                <Image src={film.poster_url} alt={`${film.title} poster`} fill className="object-cover" unoptimized />
+              ) : (
+                <div className="flex h-full items-center justify-center text-[0.65rem] text-[color:var(--text-muted)]">
+                  No poster
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
+        <div className="grid gap-4 md:grid-cols-3">
+          <div className="panel-soft interactive-panel text-center">
+            <p className="eyebrow">Search</p>
+            <p className="mt-2 text-lg font-semibold text-[color:var(--text)]">Find a user</p>
           </div>
-          <div className="rounded-xl border border-white/10 bg-white/5">
-            <CohortList cohorts={cohorts} />
+          <div className="panel-soft interactive-panel text-center">
+            <p className="eyebrow">Browse</p>
+            <p className="mt-2 text-lg font-semibold text-[color:var(--text)]">Open the canon</p>
+          </div>
+          <div className="panel-soft interactive-panel text-center">
+            <p className="eyebrow">Build</p>
+            <p className="mt-2 text-lg font-semibold text-[color:var(--text)]">Request a new one</p>
           </div>
         </div>
-        <div>
-          <CreateCohortForm />
-        </div>
-      </div>
+      </section>
     </section>
   );
 }

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, FormEvent, useTransition } from "react";
+import { useState, type FormEvent, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { getApiBase } from "@/lib/api-base";
 import { isDemoMode } from "@/lib/demo-flags";
@@ -10,11 +10,14 @@ const apiKey = process.env.NEXT_PUBLIC_API_KEY;
 
 function DemoLockedNotice() {
   return (
-    <div className="rounded-xl border border-white/10 bg-white/5 p-6 space-y-3 text-sm text-slate-300">
-      <h3 className="text-lg font-semibold text-brand-primary">Create Cohort</h3>
-      <p>
-        The public Kinoboxd demo is <span className="text-white">read-only</span>. Cohort creation and sync controls
-        are only available on internal environments.
+    <div className="panel-soft space-y-4 text-sm text-[color:var(--text-muted)]">
+      <div className="space-y-2">
+        <p className="eyebrow">Create a cohort</p>
+        <h3 className="text-xl font-semibold text-[color:var(--text-strong)]">Creation is disabled in the public preview.</h3>
+      </div>
+      <p className="leading-7">
+        You can still browse the live ranking boards here. To create or sync a cohort, use your local or internal
+        Kinoboxd environment.
       </p>
     </div>
   );
@@ -49,7 +52,7 @@ function CreateCohortFormInner({ onCreated }: { onCreated?: () => void }) {
       }
       setSeedUsername("");
       setLabel("");
-      setSuccess("Cohort created!");
+      setSuccess("Cohort created.");
       if (onCreated) {
         onCreated();
       }
@@ -64,38 +67,53 @@ function CreateCohortFormInner({ onCreated }: { onCreated?: () => void }) {
   }
 
   return (
-    <form onSubmit={handleSubmit} className="rounded-xl border border-white/10 bg-white/5 p-6 space-y-4">
-      <h3 className="text-lg font-semibold text-brand-primary">Create Cohort</h3>
-      <p className="text-sm text-slate-400">Add a new Letterboxd cohort to track rankings and syncs.</p>
-      <div className="space-y-1">
-        <label className="text-sm text-slate-200">Seed username</label>
+    <form onSubmit={handleSubmit} className="panel-soft space-y-5">
+      <div className="space-y-2">
+        <p className="eyebrow">Create a cohort</p>
+        <h3 className="text-xl font-semibold text-[color:var(--text-strong)]">Start a fresh taste circle from one Letterboxd handle.</h3>
+        <p className="text-sm leading-7 text-[color:var(--text-muted)]">
+          Give the cohort a clear label, seed it from a profile, and let Kinoboxd build the ranking board around that
+          network.
+        </p>
+      </div>
+
+      <div className="space-y-2">
+        <label htmlFor="seed-username" className="field-label">
+          Seed username
+        </label>
         <input
-          className="w-full rounded border border-white/10 bg-black/30 px-3 py-2 text-sm"
+          id="seed-username"
+          className="field-input"
           value={seedUsername}
           onChange={(event) => setSeedUsername(event.target.value)}
           placeholder="letterboxd_user"
           required
         />
       </div>
-      <div className="space-y-1">
-        <label className="text-sm text-slate-200">Label</label>
+
+      <div className="space-y-2">
+        <label htmlFor="cohort-label" className="field-label">
+          Cohort label
+        </label>
         <input
-          className="w-full rounded border border-white/10 bg-black/30 px-3 py-2 text-sm"
+          id="cohort-label"
+          className="field-input"
           value={label}
           onChange={(event) => setLabel(event.target.value)}
-          placeholder="My Critics Cohort"
+          placeholder="Weekend repertory crew"
           required
         />
       </div>
+
       <button
         type="submit"
-        className="rounded bg-brand-primary px-4 py-2 text-sm font-semibold text-black disabled:opacity-60"
+        className="button-primary w-full disabled:cursor-not-allowed disabled:opacity-60"
         disabled={isSubmitting || isRefreshing}
       >
-        {isSubmitting ? "Creating…" : isRefreshing ? "Refreshing…" : "Create cohort"}
+        {isSubmitting ? "Creating..." : isRefreshing ? "Refreshing..." : "Create cohort"}
       </button>
-      {error && <p className="text-sm text-red-400">{error}</p>}
-      {success && <p className="text-sm text-green-400">{success}</p>}
+      {error ? <p className="text-sm text-red-300">{error}</p> : null}
+      {success ? <p className="text-sm text-emerald-300">{success}</p> : null}
     </form>
   );
 }
