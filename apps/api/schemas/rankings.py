@@ -20,6 +20,8 @@ class RankingItem(BaseModel):
     score: float
     title: str
     slug: str
+    tmdb_id: int | None = None
+    imdb_id: str | None = None
     poster_url: str | None = None
     release_year: int | None = None
     watchers: int | None

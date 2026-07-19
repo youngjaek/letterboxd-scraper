@@ -4,6 +4,8 @@ export type RankingRow = {
   score: number;
   title: string;
   slug: string;
+  tmdb_id: number | null;
+  imdb_id: string | null;
   poster_url: string | null;
   release_year?: number | null;
   watchers: number | null;

@@ -17,6 +17,7 @@ type PaginationControlsProps = {
   onPageSizeChange: (nextSize: number) => void;
   onResultLimitChange: (nextLimit: number) => void;
   onSortChange: (nextValue: string) => void;
+  onExport?: () => void;
 };
 
 function PaginationButton({
@@ -63,6 +64,7 @@ export function PaginationControls({
   onPageSizeChange,
   onResultLimitChange,
   onSortChange,
+  onExport,
 }: PaginationControlsProps) {
   const [jumpValue, setJumpValue] = useState(String(page));
   const [toastMessage, setToastMessage] = useState<string | null>(null);
@@ -197,6 +199,15 @@ export function PaginationControls({
         </div>
       </div>
       <div className="flex flex-wrap items-center gap-3">
+        {placement === "top" && onExport ? (
+          <button
+            type="button"
+            className="rounded-full border border-brand-primary/60 bg-brand-primary/10 px-3 py-1 text-xs text-white transition hover:border-brand-primary hover:bg-brand-primary/20"
+            onClick={onExport}
+          >
+            Export CSV
+          </button>
+        ) : null}
         <PaginationButton
           text="Prev"
           ariaLabel="Previous page"

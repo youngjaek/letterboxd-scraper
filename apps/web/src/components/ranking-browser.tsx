@@ -87,6 +87,39 @@ function sortItems(items: RankingRow[], option: RankingSortOption) {
   });
 }
 
+const EXPORT_COLUMNS = ["LetterboxdURI", "tmdbID", "imdbID", "Title", "Year"] as const;
+
+function escapeCsvValue(value: string | number | null | undefined): string {
+  const text = value === null || value === undefined ? "" : String(value);
+  return /[",\r\n]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text;
+}
+
+function downloadCsv(items: RankingRow[]) {
+  const rows = [
+    EXPORT_COLUMNS.join(","),
+    ...items.map((item) =>
+      [
+        letterboxdUrl(item.slug),
+        item.tmdb_id,
+        item.imdb_id,
+        item.title,
+        item.release_year,
+      ]
+        .map(escapeCsvValue)
+        .join(","),
+    ),
+  ];
+  const blob = new Blob([`${rows.join("\r\n")}\r\n`], { type: "text/csv;charset=utf-8" });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = `cohort-rankings-${new Date().toISOString().slice(0, 10)}.csv`;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  URL.revokeObjectURL(url);
+}
+
 export function RankingBrowser({
   items,
   totalItems,
@@ -242,6 +275,7 @@ export function RankingBrowser({
         onPageSizeChange={handlePageSizeChange}
         onResultLimitChange={handleResultLimitChange}
         onSortChange={handleSortChange}
+        onExport={() => downloadCsv(sortedItems)}
       />
       {visibleItems.length === 0 ? (
         <p className="p-6 text-sm text-slate-400">No rankings found for the current filters.</p>
