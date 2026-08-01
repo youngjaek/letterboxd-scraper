@@ -1,7 +1,17 @@
 "use client";
 
 import type { Route } from "next";
-import { FormEvent, useCallback, useEffect, useMemo, useState, useTransition } from "react";
+import {
+  FormEvent,
+  KeyboardEvent as ReactKeyboardEvent,
+  PointerEvent as ReactPointerEvent,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  useTransition,
+} from "react";
 import { usePathname, useRouter } from "next/navigation";
 import { useSearchParamsUpdater, useSyncedSearchParams } from "./search-params-provider";
 import { getApiBase } from "@/lib/api-base";
@@ -444,6 +454,362 @@ function ReleaseYearFilters() {
   );
 }
 
+const RATING_SLIDER_MIN = 0.5;
+const RATING_SLIDER_MAX = 5;
+const RATING_SLIDER_STEP = 0.5;
+
+function parseRatingValue(value: string): number | null {
+  const trimmed = value.trim();
+  if (!trimmed) {
+    return null;
+  }
+  const parsed = Number(trimmed);
+  if (!Number.isFinite(parsed) || parsed < 0 || parsed > 5) {
+    return null;
+  }
+  return parsed;
+}
+
+function formatRatingValue(value: number): string {
+  return Number.isInteger(value) ? String(value) : value.toFixed(2).replace(/0+$/, "").replace(/\.$/, "");
+}
+
+function RatingRangeFilter() {
+  const searchParams = useSyncedSearchParams();
+  const router = useRouter();
+  const pathname = usePathname();
+  const manualMinRaw = searchParams.get("avg_rating_min") ?? "";
+  const manualMaxRaw = searchParams.get("avg_rating_max") ?? "";
+  const minInclusiveRaw = searchParams.get("avg_rating_min_inclusive");
+  const maxInclusiveRaw = searchParams.get("avg_rating_max_inclusive");
+  const sliderMinRaw = manualMinRaw;
+  const sliderMaxRaw = manualMaxRaw;
+  const [manualMin, setManualMin] = useState(manualMinRaw);
+  const [manualMax, setManualMax] = useState(manualMaxRaw);
+  const [minInclusive, setMinInclusive] = useState(minInclusiveRaw !== "false");
+  const [maxInclusive, setMaxInclusive] = useState(maxInclusiveRaw !== "false");
+  const [sliderMin, setSliderMin] = useState(
+    parseRatingValue(sliderMinRaw ?? "") ?? RATING_SLIDER_MIN,
+  );
+  const [sliderMax, setSliderMax] = useState(
+    parseRatingValue(sliderMaxRaw ?? "") ?? RATING_SLIDER_MAX,
+  );
+  const sliderValuesRef = useRef({ min: sliderMin, max: sliderMax });
+  const draggingHandleRef = useRef<"min" | "max" | null>(null);
+  const didDragRef = useRef(false);
+
+  useEffect(() => {
+    setManualMin(manualMinRaw);
+    setManualMax(manualMaxRaw);
+  }, [manualMinRaw, manualMaxRaw]);
+
+  useEffect(() => {
+    setMinInclusive(minInclusiveRaw !== "false");
+    setMaxInclusive(maxInclusiveRaw !== "false");
+  }, [minInclusiveRaw, maxInclusiveRaw]);
+
+  useEffect(() => {
+    const nextMin = parseRatingValue(sliderMinRaw ?? "") ?? RATING_SLIDER_MIN;
+    const nextMax = parseRatingValue(sliderMaxRaw ?? "") ?? RATING_SLIDER_MAX;
+    sliderValuesRef.current = { min: nextMin, max: nextMax };
+    setSliderMin(nextMin);
+    setSliderMax(nextMax);
+  }, [sliderMinRaw, sliderMaxRaw]);
+
+  function pushParams(params: URLSearchParams) {
+    params.delete("page");
+    const query = params.toString();
+    const href = (query ? `${pathname}?${query}` : pathname) as Route;
+    router.push(href, { scroll: false });
+  }
+
+  function commitManualRange(nextMin: string, nextMax: string) {
+    let min = parseRatingValue(nextMin);
+    let max = parseRatingValue(nextMax);
+    if (min !== null && max !== null && min > max) {
+      [min, max] = [max, min];
+    }
+    const params = new URLSearchParams(searchParams.toString());
+    if (min === null) {
+      params.delete("avg_rating_min");
+    } else {
+      params.set("avg_rating_min", formatRatingValue(min));
+    }
+    if (max === null) {
+      params.delete("avg_rating_max");
+    } else {
+      params.set("avg_rating_max", formatRatingValue(max));
+    }
+    const nextMinInclusive = min === null ? true : minInclusive;
+    const nextMaxInclusive = max === null ? true : maxInclusive;
+    if (min === null || nextMinInclusive) {
+      params.delete("avg_rating_min_inclusive");
+    } else {
+      params.set("avg_rating_min_inclusive", "false");
+    }
+    if (max === null || nextMaxInclusive) {
+      params.delete("avg_rating_max_inclusive");
+    } else {
+      params.set("avg_rating_max_inclusive", "false");
+    }
+    setManualMin(min === null ? "" : formatRatingValue(min));
+    setManualMax(max === null ? "" : formatRatingValue(max));
+    setMinInclusive(nextMinInclusive);
+    setMaxInclusive(nextMaxInclusive);
+    sliderValuesRef.current = { min: min ?? RATING_SLIDER_MIN, max: max ?? RATING_SLIDER_MAX };
+    setSliderMin(min ?? RATING_SLIDER_MIN);
+    setSliderMax(max ?? RATING_SLIDER_MAX);
+    pushParams(params);
+  }
+
+  function commitSliderRange(
+    nextMin: number,
+    nextMax: number,
+    nextMinInclusive = minInclusive,
+    nextMaxInclusive = maxInclusive,
+  ) {
+    const params = new URLSearchParams(searchParams.toString());
+    if (nextMin <= RATING_SLIDER_MIN && nextMinInclusive) {
+      params.delete("avg_rating_min");
+    } else {
+      params.set("avg_rating_min", formatRatingValue(nextMin));
+    }
+    if (nextMax >= RATING_SLIDER_MAX && nextMaxInclusive) {
+      params.delete("avg_rating_max");
+    } else {
+      params.set("avg_rating_max", formatRatingValue(nextMax));
+    }
+    if (nextMin <= RATING_SLIDER_MIN && nextMinInclusive) {
+      params.delete("avg_rating_min_inclusive");
+    } else if (nextMinInclusive) {
+      params.delete("avg_rating_min_inclusive");
+    } else {
+      params.set("avg_rating_min_inclusive", "false");
+    }
+    if (nextMax >= RATING_SLIDER_MAX && nextMaxInclusive) {
+      params.delete("avg_rating_max_inclusive");
+    } else if (nextMaxInclusive) {
+      params.delete("avg_rating_max_inclusive");
+    } else {
+      params.set("avg_rating_max_inclusive", "false");
+    }
+    setManualMin(nextMin <= RATING_SLIDER_MIN && nextMinInclusive ? "" : formatRatingValue(nextMin));
+    setManualMax(nextMax >= RATING_SLIDER_MAX && nextMaxInclusive ? "" : formatRatingValue(nextMax));
+    setMinInclusive(nextMinInclusive);
+    setMaxInclusive(nextMaxInclusive);
+    sliderValuesRef.current = { min: nextMin, max: nextMax };
+    setSliderMin(nextMin);
+    setSliderMax(nextMax);
+    pushParams(params);
+  }
+
+  function updateSliderPreview(nextMin: number, nextMax: number) {
+    sliderValuesRef.current = { min: nextMin, max: nextMax };
+    setSliderMin(nextMin);
+    setSliderMax(nextMax);
+    setManualMin(nextMin <= RATING_SLIDER_MIN && minInclusive ? "" : formatRatingValue(nextMin));
+    setManualMax(nextMax >= RATING_SLIDER_MAX && maxInclusive ? "" : formatRatingValue(nextMax));
+  }
+
+  function snapSliderValue(value: number) {
+    const snapped = Math.round(value / RATING_SLIDER_STEP) * RATING_SLIDER_STEP;
+    return Math.max(RATING_SLIDER_MIN, Math.min(RATING_SLIDER_MAX, snapped));
+  }
+
+  function previewSliderFromPointer(handle: "min" | "max", clientX: number) {
+    const track = document.getElementById("rating-range-track");
+    if (!track) {
+      return;
+    }
+    const bounds = track.getBoundingClientRect();
+    const ratio = Math.max(0, Math.min(1, (clientX - bounds.left) / bounds.width));
+    const nextValue = snapSliderValue(RATING_SLIDER_MIN + ratio * (RATING_SLIDER_MAX - RATING_SLIDER_MIN));
+    const current = sliderValuesRef.current;
+    if (handle === "min") {
+      updateSliderPreview(Math.min(nextValue, current.max), current.max);
+    } else {
+      updateSliderPreview(current.min, Math.max(nextValue, current.min));
+    }
+  }
+
+  function startSliderDrag(handle: "min" | "max", event: ReactPointerEvent<HTMLButtonElement>) {
+    event.preventDefault();
+    draggingHandleRef.current = handle;
+    didDragRef.current = false;
+    event.currentTarget.setPointerCapture(event.pointerId);
+  }
+
+  function moveSliderDrag(handle: "min" | "max", event: ReactPointerEvent<HTMLButtonElement>) {
+    if (draggingHandleRef.current === handle) {
+      didDragRef.current = true;
+      previewSliderFromPointer(handle, event.clientX);
+    }
+  }
+
+  function finishSliderDrag(handle: "min" | "max") {
+    if (draggingHandleRef.current !== handle) {
+      return;
+    }
+    draggingHandleRef.current = null;
+    if (!didDragRef.current) {
+      return;
+    }
+    const current = sliderValuesRef.current;
+    commitSliderRange(current.min, current.max);
+  }
+
+  function cancelSliderDrag() {
+    draggingHandleRef.current = null;
+    didDragRef.current = false;
+  }
+
+  function toggleSliderInclusivity(handle: "min" | "max") {
+    if (didDragRef.current) {
+      didDragRef.current = false;
+      return;
+    }
+    const nextMinInclusive = handle === "min" ? !minInclusive : minInclusive;
+    const nextMaxInclusive = handle === "max" ? !maxInclusive : maxInclusive;
+    commitSliderRange(sliderMin, sliderMax, nextMinInclusive, nextMaxInclusive);
+  }
+
+  function handleSliderKeyDown(handle: "min" | "max", event: ReactKeyboardEvent<HTMLButtonElement>) {
+    const current = sliderValuesRef.current;
+    const value = handle === "min" ? current.min : current.max;
+    let nextValue: number | null = null;
+    if (event.key === "ArrowLeft" || event.key === "ArrowDown") {
+      nextValue = snapSliderValue(value) - RATING_SLIDER_STEP;
+    } else if (event.key === "ArrowRight" || event.key === "ArrowUp") {
+      nextValue = snapSliderValue(value) + RATING_SLIDER_STEP;
+    } else if (event.key === "Home") {
+      nextValue = RATING_SLIDER_MIN;
+    } else if (event.key === "End") {
+      nextValue = RATING_SLIDER_MAX;
+    }
+    if (nextValue === null) {
+      return;
+    }
+    event.preventDefault();
+    if (handle === "min") {
+      commitSliderRange(Math.max(RATING_SLIDER_MIN, Math.min(nextValue, current.max)), current.max);
+    } else {
+      commitSliderRange(current.min, Math.min(RATING_SLIDER_MAX, Math.max(nextValue, current.min)));
+    }
+  }
+
+  const sliderSpan = RATING_SLIDER_MAX - RATING_SLIDER_MIN;
+  const selectedSliderStart = ((sliderMin - RATING_SLIDER_MIN) / sliderSpan) * 100;
+  const selectedSliderWidth = ((sliderMax - sliderMin) / sliderSpan) * 100;
+
+  return (
+    <div className="flex flex-col gap-3 md:col-span-2">
+      <span className="text-[0.6rem] font-semibold uppercase tracking-[0.2em] text-slate-400">
+        Average Rating
+      </span>
+      <div className="flex flex-col gap-3">
+        <div className="order-2 flex flex-wrap gap-3 text-xs text-slate-400">
+          <label className="flex flex-col gap-1">
+            <span>Manual min</span>
+            <input
+              type="text"
+              inputMode="decimal"
+              value={manualMin}
+              placeholder="Any"
+              onChange={(event) => setManualMin(event.target.value)}
+              onBlur={() => commitManualRange(manualMin, manualMax)}
+              onKeyDown={(event) => {
+                if (event.key === "Enter") {
+                  event.preventDefault();
+                  commitManualRange(manualMin, manualMax);
+                }
+              }}
+              className="w-24 rounded border border-white/10 bg-black/40 px-3 py-2 text-sm text-white focus:border-brand-primary focus:outline-none"
+            />
+          </label>
+          <label className="flex flex-col gap-1">
+            <span>Manual max</span>
+            <input
+              type="text"
+              inputMode="decimal"
+              value={manualMax}
+              placeholder="Any"
+              onChange={(event) => setManualMax(event.target.value)}
+              onBlur={() => commitManualRange(manualMin, manualMax)}
+              onKeyDown={(event) => {
+                if (event.key === "Enter") {
+                  event.preventDefault();
+                  commitManualRange(manualMin, manualMax);
+                }
+              }}
+              className="w-24 rounded border border-white/10 bg-black/40 px-3 py-2 text-sm text-white focus:border-brand-primary focus:outline-none"
+            />
+          </label>
+          <p className="self-end pb-2 text-[0.65rem] text-slate-500">Inclusive; accepts 0–5.</p>
+        </div>
+        <div className="order-1 flex flex-col gap-2 text-xs text-slate-400">
+          <div className="flex items-center justify-between">
+            <span>Slider range</span>
+            <span className="font-semibold text-white">
+              {formatRatingValue(sliderMin)}–{formatRatingValue(sliderMax)}
+            </span>
+          </div>
+          <div id="rating-range-track" className="relative h-7">
+            <div className="absolute left-0 right-0 top-3 h-1 rounded-full bg-white/15" />
+            <div
+              className="absolute top-3 h-1 rounded-full bg-brand-primary"
+              style={{ left: `${selectedSliderStart}%`, width: `${selectedSliderWidth}%` }}
+            />
+            <button
+              aria-label={`Minimum slider rating (${minInclusive ? "inclusive" : "exclusive"})`}
+              type="button"
+              role="slider"
+              aria-valuemin={RATING_SLIDER_MIN}
+              aria-valuemax={RATING_SLIDER_MAX}
+              aria-valuenow={sliderMin}
+              tabIndex={0}
+              onKeyDown={(event) => handleSliderKeyDown("min", event)}
+              onPointerDown={(event) => startSliderDrag("min", event)}
+              onPointerMove={(event) => moveSliderDrag("min", event)}
+              onPointerUp={() => finishSliderDrag("min")}
+              onPointerCancel={cancelSliderDrag}
+              onClick={() => toggleSliderInclusivity("min")}
+              title={minInclusive ? "Inclusive minimum; click to exclude" : "Exclusive minimum; click to include"}
+              style={{ left: `${selectedSliderStart}%` }}
+              className={`absolute top-1/2 z-30 h-4 w-4 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-brand-primary p-0 ${
+                minInclusive ? "bg-brand-primary" : "bg-[color:var(--surface)]"
+              }`}
+            />
+            <button
+              aria-label={`Maximum slider rating (${maxInclusive ? "inclusive" : "exclusive"})`}
+              type="button"
+              role="slider"
+              aria-valuemin={RATING_SLIDER_MIN}
+              aria-valuemax={RATING_SLIDER_MAX}
+              aria-valuenow={sliderMax}
+              tabIndex={0}
+              onKeyDown={(event) => handleSliderKeyDown("max", event)}
+              onPointerDown={(event) => startSliderDrag("max", event)}
+              onPointerMove={(event) => moveSliderDrag("max", event)}
+              onPointerUp={() => finishSliderDrag("max")}
+              onPointerCancel={cancelSliderDrag}
+              onClick={() => toggleSliderInclusivity("max")}
+              title={maxInclusive ? "Inclusive maximum; click to exclude" : "Exclusive maximum; click to include"}
+              style={{ left: `${selectedSliderStart + selectedSliderWidth}%` }}
+              className={`absolute top-1/2 z-30 h-4 w-4 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-brand-primary p-0 ${
+                maxInclusive ? "bg-brand-primary" : "bg-[color:var(--surface)]"
+              }`}
+            />
+          </div>
+          <div className="flex justify-between text-[0.6rem] text-slate-500">
+            <span>0.5</span>
+            <span>5</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function DistributionFilter() {
   const searchParams = useSyncedSearchParams();
   const router = useRouter();
@@ -682,6 +1048,10 @@ export function RankingFilters() {
     "release_year_min",
     "release_year_max",
     "decade",
+    "avg_rating_min",
+    "avg_rating_max",
+    "avg_rating_min_inclusive",
+    "avg_rating_max_inclusive",
     "watchers_min",
     "watchers_max",
     "letterboxd_source",
@@ -742,6 +1112,7 @@ export function RankingFilters() {
           <ReleaseYearFilters />
           <WatchersFilters />
         </div>
+        <RatingRangeFilter />
         <LetterboxdSourceFilter />
         <DistributionFilter />
         <div className="flex justify-end">

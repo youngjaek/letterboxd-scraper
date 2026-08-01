@@ -356,6 +356,10 @@ def list_rankings(
     release_year_min: int | None = None,
     release_year_max: int | None = None,
     decade: int | None = None,
+    avg_rating_min: float | None = Query(None, ge=0, le=5),
+    avg_rating_max: float | None = Query(None, ge=0, le=5),
+    avg_rating_min_inclusive: bool = Query(True),
+    avg_rating_max_inclusive: bool = Query(True),
     watchers_min: int | None = Query(2, ge=0),
     watchers_max: int | None = Query(None, ge=0),
     session: Session = Depends(get_db_session),
@@ -436,6 +440,16 @@ def list_rankings(
         params["decade_start"] = decade_start
         params["decade_end"] = decade_end
         filter_clauses.append("f.release_year BETWEEN :decade_start AND :decade_end")
+    if avg_rating_min is not None and avg_rating_max is not None and avg_rating_min > avg_rating_max:
+        raise HTTPException(status_code=400, detail="avg_rating_min cannot be greater than avg_rating_max.")
+    if avg_rating_min is not None:
+        params["avg_rating_min"] = avg_rating_min
+        min_operator = ">=" if avg_rating_min_inclusive else ">"
+        filter_clauses.append(f"stats.avg_rating {min_operator} :avg_rating_min")
+    if avg_rating_max is not None:
+        params["avg_rating_max"] = avg_rating_max
+        max_operator = "<=" if avg_rating_max_inclusive else "<"
+        filter_clauses.append(f"stats.avg_rating {max_operator} :avg_rating_max")
     if watchers_min is not None:
         if watchers_min < 0:
             raise HTTPException(status_code=400, detail="watchers_min cannot be negative.")
