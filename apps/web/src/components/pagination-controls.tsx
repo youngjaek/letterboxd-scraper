@@ -1,7 +1,7 @@
 "use client";
 
 import { FormEvent, useEffect, useState } from "react";
-import { PAGE_SIZE_OPTIONS, RESULT_LIMIT_OPTIONS } from "@/lib/ranking-options";
+import { MAX_RESULT_LIMIT, PAGE_SIZE_OPTIONS, RESULT_LIMIT_OPTIONS } from "@/lib/ranking-options";
 import { RankingSortOption } from "@/lib/ranking-sort";
 
 type PaginationControlsProps = {
@@ -67,8 +67,12 @@ export function PaginationControls({
   onExport,
 }: PaginationControlsProps) {
   const [jumpValue, setJumpValue] = useState(String(page));
+  const [customLimitValue, setCustomLimitValue] = useState("");
   const [toastMessage, setToastMessage] = useState<string | null>(null);
   const [toastVisible, setToastVisible] = useState(false);
+  const isPresetResultLimit = RESULT_LIMIT_OPTIONS.includes(
+    resultLimit as (typeof RESULT_LIMIT_OPTIONS)[number],
+  );
   useEffect(() => {
     if (!toastMessage) {
       setToastVisible(false);
@@ -85,6 +89,10 @@ export function PaginationControls({
   useEffect(() => {
     setJumpValue(String(page));
   }, [page]);
+
+  useEffect(() => {
+    setCustomLimitValue(isPresetResultLimit ? "" : String(resultLimit));
+  }, [isPresetResultLimit, resultLimit]);
 
   function clampPage(value: number) {
     if (!Number.isFinite(value)) {
@@ -114,6 +122,15 @@ export function PaginationControls({
 
   function handleResultLimitChange(nextValue: number) {
     onResultLimitChange(nextValue);
+  }
+
+  function submitCustomLimit() {
+    const parsed = Number(customLimitValue);
+    if (!Number.isInteger(parsed) || parsed < 1 || parsed > MAX_RESULT_LIMIT) {
+      setToastMessage(`Custom top must be a whole number from 1 to ${MAX_RESULT_LIMIT.toLocaleString()}.`);
+      return;
+    }
+    handleResultLimitChange(parsed);
   }
 
   function handlePageSizeChange(nextValue: number) {
@@ -157,15 +174,45 @@ export function PaginationControls({
             Top
             <select
               className="rounded border border-white/15 bg-black/30 px-2 py-1 text-[0.75rem] text-white focus:border-brand-primary focus:outline-none"
-              value={resultLimit}
-              onChange={(event) => handleResultLimitChange(Number(event.target.value))}
+              value={isPresetResultLimit ? String(resultLimit) : "custom"}
+              onChange={(event) => {
+                if (event.target.value === "custom") {
+                  setCustomLimitValue(String(resultLimit));
+                  return;
+                }
+                handleResultLimitChange(Number(event.target.value));
+              }}
             >
               {RESULT_LIMIT_OPTIONS.map((option) => (
                 <option key={option} value={option}>
                   {option}
                 </option>
               ))}
+              <option value="custom">Custom</option>
             </select>
+            {placement === "top" ? (
+              <>
+                <input
+                  type="number"
+                  min={1}
+                  max={MAX_RESULT_LIMIT}
+                  step={1}
+                  inputMode="numeric"
+                  value={customLimitValue}
+                  onChange={(event) => setCustomLimitValue(event.target.value)}
+                  onBlur={submitCustomLimit}
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter") {
+                      event.preventDefault();
+                      submitCustomLimit();
+                    }
+                  }}
+                  placeholder="Custom"
+                  aria-label={`Custom top, 1 to ${MAX_RESULT_LIMIT.toLocaleString()}`}
+                  className="w-20 rounded border border-white/15 bg-black/30 px-2 py-1 text-[0.75rem] text-white placeholder:text-slate-500 focus:border-brand-primary focus:outline-none"
+                />
+              </>
+            ) : null}
           </label>
           <label className="flex items-center gap-2">
             Per page

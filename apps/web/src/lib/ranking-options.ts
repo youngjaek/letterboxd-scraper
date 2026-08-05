@@ -1,4 +1,5 @@
-export const RESULT_LIMIT_OPTIONS = [50, 100, 250, 500, 1000] as const;
+export const RESULT_LIMIT_OPTIONS = [50, 100, 250, 500, 1000, 5000, 10000] as const;
+export const MAX_RESULT_LIMIT = 10000;
 export type ResultLimitOption = (typeof RESULT_LIMIT_OPTIONS)[number];
 export const DEFAULT_RESULT_LIMIT: ResultLimitOption = 50;
 
@@ -22,8 +23,15 @@ function coerceOption(
   return options.includes(parsed) ? parsed : defaultValue;
 }
 
-export function parseResultLimit(value: string | string[] | undefined): ResultLimitOption {
-  return coerceOption(value, RESULT_LIMIT_OPTIONS, DEFAULT_RESULT_LIMIT) as ResultLimitOption;
+export function parseResultLimit(value: string | string[] | undefined): number {
+  const raw = Array.isArray(value) ? value[0] : value;
+  if (!raw) {
+    return DEFAULT_RESULT_LIMIT;
+  }
+  const parsed = Number(raw);
+  return Number.isInteger(parsed) && parsed >= 1 && parsed <= MAX_RESULT_LIMIT
+    ? parsed
+    : DEFAULT_RESULT_LIMIT;
 }
 
 export function parsePageSize(value: string | string[] | undefined): PageSizeOption {

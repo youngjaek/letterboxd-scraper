@@ -36,7 +36,8 @@ DISTRIBUTION_LABELS = [
     "unclassified",
 ]
 
-RESULT_LIMIT_OPTIONS = [50, 100, 250, 500, 1000]
+RESULT_LIMIT_OPTIONS = [50, 100, 250, 500, 1000, 5000, 10000]
+MAX_RESULT_LIMIT = 10000
 
 SORTABLE_FIELDS: dict[str, str] = {
     "score": "score",
@@ -365,13 +366,13 @@ def list_rankings(
     session: Session = Depends(get_db_session),
     settings: config.Settings = Depends(get_settings),
 ) -> RankingListResponse:
-    limit = max(1, min(limit, result_limit, 1000))
+    limit = max(1, min(limit, result_limit, MAX_RESULT_LIMIT))
     page = max(1, page)
     offset = (page - 1) * limit
-    if result_limit not in RESULT_LIMIT_OPTIONS:
+    if result_limit < 1 or result_limit > MAX_RESULT_LIMIT:
         raise HTTPException(
             status_code=400,
-            detail=f"result_limit must be one of {', '.join(str(value) for value in RESULT_LIMIT_OPTIONS)}",
+            detail=f"result_limit must be between 1 and {MAX_RESULT_LIMIT}",
         )
     normalized_sort_by = sort_by.lower()
     sort_field = SORTABLE_FIELDS.get(normalized_sort_by)
